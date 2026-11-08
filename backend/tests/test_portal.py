@@ -286,3 +286,69 @@ def test_demo_payments_disabled(patient,monkeypatch):
     monkeypatch.setattr(main,'DEMO_MODE',False)
     r=patient.post('/api/payments',json={'kind':'PLAN','target_id':1,'status':'APPROVED','idempotency_key':uuid4().hex})
     assert r.status_code==403
+
+def test_commit_failure_is_not_reported_as_success(patient,monkeypatch):
+    activate(patient,'Premium')
+    h=hold(patient)
+    from sqlalchemy.orm import Session
+    def broken_commit(self):
+        raise OperationalError('injected commit failure',{},Exception('test'))
+    with monkeypatch.context() as m:
+        m.setattr(Session,'commit',broken_commit)
+        with TestClient(app,raise_server_exceptions=False) as c:
+            c.cookies.update(patient.cookies)
+            assert c.post(f"/api/holds/{h['id']}/confirm").status_code==503
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(Appointment))==0
+        assert db.get(Hold,h['id']).status=='ACTIVE'
+
+def test_partial_overlap_is_rejected_by_service_and_database(patient):
+    a=appointment(patient,'Premium')
+    start=datetime.fromisoformat(a['starts_at'])+timedelta(minutes=5)
+    end=start+timedelta(minutes=30)
+    with SessionLocal.begin() as db:
+        original=db.get(Appointment,a['id'])
+        admin=db.scalar(select(User).where(User.role=='ADMIN'))
+        slot=Availability(doctor_id=original.doctor_id,starts_at=start,ends_at=end,published_by=admin.id)
+        db.add(slot)
+        db.flush()
+        slot_id=slot.id
+        uid=original.patient_id
+        doctor_id=original.doctor_id
+        plan_id=original.plan_id
+    assert patient.post('/api/holds',json={'availability_id':slot_id}).status_code==409
+    with SessionLocal() as db:
+        h=Hold(patient_id=uid,doctor_id=doctor_id,availability_id=slot_id,plan_id=plan_id,starts_at=start,ends_at=end,expires_at=now()+timedelta(minutes=10),copay=0,status='CONFIRMED')
+        db.add(h)
+        db.flush()
+        db.add(Appointment(code='VS-DIRECT-CONFLICT',patient_id=uid,doctor_id=doctor_id,hold_id=h.id,plan_id=plan_id,starts_at=start,ends_at=end,copay=0,status='CONFIRMED'))
+        with pytest.raises(IntegrityError):
+            db.flush()
+        db.rollback()
+    assert len(patient.get('/api/appointments').json())==1
+
+def test_past_schedule_rejected_before_payment(patient):
+    activate(patient)
+    with SessionLocal.begin() as db:
+        admin=db.scalar(select(User).where(User.role=='ADMIN'))
+        slot=Availability(doctor_id=1,starts_at=now()-timedelta(days=1),ends_at=now()-timedelta(hours=23),published_by=admin.id)
+        db.add(slot)
+        db.flush()
+        slot_id=slot.id
+    assert patient.post('/api/holds',json={'availability_id':slot_id}).status_code==409
+    assert all(p['kind']=='PLAN' for p in patient.get('/api/payments').json())
+
+def test_concurrent_cancellation_changes_once(patient):
+    a=appointment(patient,'Premium')
+    data={'version':1,'reason':'Cancelación concurrente','confirmed':True}
+    def do_cancel(_):
+        with TestClient(app) as c:
+            c.cookies.update(patient.cookies)
+            return c.post(f"/api/appointments/{a['id']}/cancel",json=data)
+    with ThreadPoolExecutor(2) as pool:
+        results=list(pool.map(do_cancel,range(2)))
+    assert sorted(r.status_code for r in results)==[200,409]
+    saved=patient.get(f"/api/appointments/{a['id']}").json()
+    assert saved['version']==2 and len(saved['history'])==2
+    notices=patient.get('/api/notifications').json()
+    assert sum('ha sido cancelada' in n['message'] for n in notices)==1

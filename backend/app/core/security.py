@@ -18,7 +18,7 @@ def create_session(db, user, response):
     db.add(SessionToken(token_hash=digest(token), user_id=user.id, expires_at=now() + timedelta(hours=SESSION_HOURS)))
     response.set_cookie('vitalsync_session', token, httponly=True, samesite='strict', secure=COOKIE_SECURE, max_age=SESSION_HOURS * 3600, path='/')
 
-def current_user(request: Request, db: Session = Depends(get_db)):
+def current_user(request: Request, db: Session = Depends(get_db, scope='function')):
     token = request.cookies.get('vitalsync_session', '')
     session = db.get(SessionToken, digest(token))
     if not session or session.expires_at <= now():
