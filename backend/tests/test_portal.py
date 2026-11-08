@@ -1,0 +1,288 @@
+from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
+from uuid import uuid4
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import select, func, text
+from sqlalchemy.exc import IntegrityError, OperationalError
+from app.main import app
+from app.db.session import SessionLocal, engine
+from app.models.entities import *
+from app.core.security import digest, passwords
+from app.services import booking
+from app.seed import seed
+from conftest import activate, free_slot, hold, copay, appointment
+
+def test_register_duplicate_and_role_injection(client):
+    body = {'name':'Paciente Nuevo','email':'nuevo@example.com','password':'Password2026!'}
+    assert client.post('/api/auth/register',json=body|{'role':'ADMIN'}).status_code == 422
+    r = client.post('/api/auth/register',json=body)
+    assert r.status_code == 201
+    assert r.json()['role'] == 'PATIENT'
+    cookie = r.headers['set-cookie'].lower()
+    assert 'httponly' in cookie and 'samesite=strict' in cookie
+    assert client.get('/api/auth/me').json()['name'] == 'Paciente Nuevo'
+    assert client.post('/api/auth/register',json=body).status_code == 409
+    with SessionLocal() as db:
+        u = db.scalar(select(User).where(User.email == body['email']))
+        assert u.password_hash != body['password'] and passwords.verify(body['password'], u.password_hash)
+
+def test_login_logout_and_session_persistence(patient):
+    token = patient.cookies.get('vitalsync_session')
+    with TestClient(app) as another:
+        another.cookies.set('vitalsync_session', token)
+        assert another.get('/api/auth/me').status_code == 200
+    assert patient.post('/api/auth/logout').status_code == 200
+    assert patient.get('/api/auth/me').status_code == 401
+    with TestClient(app) as another:
+        another.cookies.set('vitalsync_session', token)
+        assert another.get('/api/auth/me').status_code == 401
+
+@pytest.mark.parametrize('email,password', [('paciente@vitalsync.demo','Incorrecta123!'),('missing@example.com','Incorrecta123!')])
+def test_invalid_login(client,email,password):
+    assert client.post('/api/auth/login',json={'email':email,'password':password}).status_code == 401
+
+def test_authorization_origin_and_expiry(patient):
+    with TestClient(app) as anonymous:
+        assert anonymous.get('/api/dashboard').status_code == 401
+        assert anonymous.post('/api/holds',json={'availability_id':1}).status_code == 401
+        assert anonymous.post('/api/auth/login',json={'email':'admin@vitalsync.demo','password':'AdminDemo2026!'}).status_code == 403
+    assert patient.post('/api/holds',json={'availability_id':1},headers={'origin':'https://evil.example'}).status_code == 403
+    assert patient.post('/api/holds',json={'availability_id':1},headers={'sec-fetch-site':'cross-site'}).status_code == 403
+    with SessionLocal.begin() as db:
+        token = db.get(SessionToken,digest(patient.cookies.get('vitalsync_session')))
+        token.expires_at = now()-timedelta(seconds=1)
+    assert patient.get('/api/dashboard').status_code == 401
+
+def test_profile_and_real_dashboard(patient):
+    assert patient.patch('/api/auth/me',json={'name':'Valentina Actualizada','phone':'+57 300 1234567'}).status_code == 200
+    assert patient.get('/api/auth/me').json()['name'] == 'Valentina Actualizada'
+    d=patient.get('/api/dashboard').json()
+    assert d['upcoming_count']==0 and d['plan']['status']=='INACTIVE'
+
+def test_no_plan_and_expired_plan(patient):
+    slot=free_slot(patient)
+    assert 'Debes activar' in patient.post('/api/holds',json={'availability_id':slot['id']}).json()['detail']
+    activate(patient)
+    uid=patient.get('/api/auth/me').json()['id']
+    with SessionLocal.begin() as db:
+        db.get(PatientPlan,uid).expires_at=now()-timedelta(days=1)
+    assert patient.get('/api/my-plan').json()['status']=='EXPIRED'
+    assert 'vencido' in patient.post('/api/holds',json={'availability_id':slot['id']}).json()['detail']
+
+@pytest.mark.parametrize('status', ['REJECTED','PENDING','IN_RECONCILIATION'])
+def test_plan_not_activated_without_approval(patient,status):
+    p=activate(patient,status=status)
+    assert p['status']==status
+    assert patient.get('/api/my-plan').json()['status']=='INACTIVE'
+
+def test_plan_payment_idempotency_and_renewal(patient):
+    p=activate(patient)
+    before=patient.get('/api/my-plan').json()
+    with SessionLocal() as db:
+        key=db.get(Payment,p['id']).idempotency_key
+    r=patient.post('/api/payments',json={'kind':'PLAN','target_id':p['plan_id'],'status':'APPROVED','idempotency_key':key})
+    assert r.json()['id']==p['id']
+    assert patient.get('/api/my-plan').json()['expires_at']==before['expires_at']
+    activate(patient)
+    after=patient.get('/api/my-plan').json()
+    assert datetime.fromisoformat(after['expires_at'])-datetime.fromisoformat(before['expires_at'])==timedelta(days=30)
+
+def test_pending_plan_reconciliation(patient):
+    p=activate(patient,status='PENDING')
+    assert patient.post('/api/payments',json={'kind':'PLAN','target_id':p['plan_id'],'status':'APPROVED','idempotency_key':uuid4().hex}).status_code==409
+    assert patient.post(f"/api/payments/{p['id']}/reconcile",json={'status':'APPROVED'}).status_code==200
+    expiry=patient.get('/api/my-plan').json()['expires_at']
+    assert patient.post(f"/api/payments/{p['id']}/reconcile",json={'status':'APPROVED'}).status_code==200
+    assert patient.get('/api/my-plan').json()['expires_at']==expiry
+    assert patient.post(f"/api/payments/{p['id']}/reconcile",json={'status':'REJECTED'}).status_code==409
+
+def test_directory_availability_coverage_and_block(patient):
+    assert len(patient.get('/api/specialties').json())==5
+    assert len(patient.get('/api/doctors?specialty_id=1').json())==1
+    assert len(patient.get('/api/doctors?search=Isabella').json())==1
+    assert patient.get('/api/doctors/9999').status_code==404
+    slots=patient.get('/api/doctors/1/availability').json()
+    blocked=next(s for s in slots if not s['available'])
+    activate(patient)
+    assert patient.post('/api/holds',json={'availability_id':blocked['id']}).status_code==409
+    assert 'no cubre' in patient.post('/api/holds',json={'availability_id':free_slot(patient,2)['id']}).json()['detail']
+    assert patient.get('/api/appointments').json()==[]
+
+def test_hold_expiry_and_late_payment(patient):
+    activate(patient)
+    h=hold(patient)
+    p=copay(patient,h,'PENDING').json()
+    with SessionLocal.begin() as db:
+        db.get(Hold,h['id']).expires_at=now()-timedelta(seconds=1)
+    assert patient.post(f"/api/holds/{h['id']}/confirm").status_code==409
+    assert copay(patient,h).status_code==409
+    assert patient.post(f"/api/payments/{p['id']}/reconcile",json={'status':'APPROVED'}).status_code==409
+    assert next(x for x in patient.get('/api/payments').json() if x['id']==p['id'])['status']=='PENDING'
+    assert patient.post(f"/api/payments/{p['id']}/reconcile",json={'status':'REJECTED'}).status_code==200
+
+def test_hold_release_and_no_patient_schedule_publication(patient):
+    activate(patient)
+    h=hold(patient)
+    assert patient.post('/api/doctors/1/availability',json={}).status_code==405
+    assert patient.post(f"/api/holds/{h['id']}/release").status_code==200
+    assert patient.post(f"/api/holds/{h['id']}/confirm").status_code==409
+    assert patient.get(f"/api/holds/{h['id']}").json()['status']=='RELEASED'
+
+@pytest.mark.parametrize('status',['REJECTED','PENDING','IN_RECONCILIATION'])
+def test_copay_not_confirmed_unless_approved(patient,status):
+    activate(patient)
+    h=hold(patient)
+    assert h['copay']==15000
+    p=copay(patient,h,status)
+    assert p.status_code==200
+    assert patient.post(f"/api/holds/{h['id']}/confirm").status_code==409
+    if status!='REJECTED':
+        assert copay(patient,h).status_code==409
+        assert patient.post(f"/api/payments/{p.json()['id']}/reconcile",json={'status':'APPROVED'}).status_code==200
+    else:
+        assert copay(patient,h).status_code==200
+    assert patient.post(f"/api/holds/{h['id']}/confirm").status_code==200
+
+def test_copay_duplicate_and_confirmation_idempotent(patient):
+    activate(patient)
+    h=hold(patient)
+    key=uuid4().hex
+    p=copay(patient,h,key=key).json()
+    assert copay(patient,h,key=key).json()['id']==p['id']
+    assert copay(patient,h).status_code==409
+    first=patient.post(f"/api/holds/{h['id']}/confirm").json()
+    second=patient.post(f"/api/holds/{h['id']}/confirm").json()
+    assert first['id']==second['id']
+    assert len(patient.get('/api/appointments').json())==1
+    assert patient.get('/api/dashboard').json()['upcoming_count']==1
+
+def test_no_copay_premium(patient):
+    activate(patient,'Premium')
+    h=hold(patient)
+    assert h['copay']==0
+    assert copay(patient,h).status_code==409
+    assert patient.post(f"/api/holds/{h['id']}/confirm").status_code==200
+
+@pytest.mark.parametrize('change',['doctor_disabled','block','plan_expired','plan_changed','schedule_unpublished'])
+def test_confirmation_revalidates(patient,change):
+    activate(patient,'Premium')
+    h=hold(patient)
+    uid=patient.get('/api/auth/me').json()['id']
+    with SessionLocal.begin() as db:
+        if change=='doctor_disabled': db.get(Doctor,h['doctor_id']).enabled=False
+        if change=='block': db.add(DoctorBlock(doctor_id=h['doctor_id'],starts_at=datetime.fromisoformat(h['starts_at']),ends_at=datetime.fromisoformat(h['ends_at']),reason='Bloqueo tardío'))
+        if change=='plan_expired': db.get(PatientPlan,uid).expires_at=now()-timedelta(days=1)
+        if change=='plan_changed': db.get(PatientPlan,uid).plan_id=1
+        if change=='schedule_unpublished': db.get(Availability,db.get(Hold,h['id']).availability_id).published=False
+    assert patient.post(f"/api/holds/{h['id']}/confirm").status_code==409
+    assert patient.get('/api/appointments').json()==[]
+
+def test_concurrent_holds_and_confirmations(patient):
+    activate(patient,'Premium')
+    with TestClient(app) as second:
+        assert second.post('/api/auth/register',json={'name':'Otro Paciente','email':'otro@example.com','password':'Password2026!'}).status_code==201
+        activate(second,'Premium')
+        slot=free_slot(patient)
+        def reserve(c): return c.post('/api/holds',json={'availability_id':slot['id']})
+        with ThreadPoolExecutor(2) as pool:
+            results=list(pool.map(reserve,[patient,second]))
+        assert sorted(r.status_code for r in results)==[201,409]
+        winner=patient if results[0].status_code==201 else second
+        h=next(r.json() for r in results if r.status_code==201)
+        def confirm(_):
+            with TestClient(app) as c:
+                c.cookies.update(winner.cookies)
+                return c.post(f"/api/holds/{h['id']}/confirm")
+        with ThreadPoolExecutor(2) as pool:
+            confirmations=list(pool.map(confirm,range(2)))
+        assert all(r.status_code==200 for r in confirmations)
+        assert len({r.json()['id'] for r in confirmations})==1
+        assert second.get('/api/appointments').status_code==200
+
+def test_cancel_own_history_notification_release_once(patient):
+    a=appointment(patient)
+    data={'version':a['version'],'reason':'Cambio de agenda','confirmed':True}
+    assert patient.post(f"/api/appointments/{a['id']}/cancel",json=data).status_code==200
+    after=patient.get(f"/api/appointments/{a['id']}").json()
+    assert after['status']=='CANCELLED' and after['version']==2 and after['economic_review']
+    assert len(after['history'])==2
+    assert patient.post(f"/api/appointments/{a['id']}/cancel",json=data).status_code==409
+    assert patient.post(f"/api/appointments/{a['id']}/cancel",json=data|{'version':2}).status_code==409
+    assert len(patient.get('/api/appointments').json())==1
+    messages=patient.get('/api/notifications').json()
+    assert any('cancelada' in n['message'] for n in messages)
+    assert patient.post(f"/api/notifications/{messages[0]['id']}/read").status_code==200
+    assert patient.get('/api/notifications').json()[0]['read']
+    assert patient.get('/api/dashboard').json()['upcoming_count']==0
+    with SessionLocal() as db:
+        original=db.get(Hold,db.get(Appointment,a['id']).hold_id)
+        slot_id=original.availability_id
+    assert patient.post('/api/holds',json={'availability_id':slot_id}).status_code==201
+
+def test_other_patient_denied(patient):
+    a=appointment(patient)
+    with TestClient(app) as other:
+        other.post('/api/auth/register',json={'name':'Otro Paciente','email':'otro@example.com','password':'Password2026!'})
+        assert other.get(f"/api/appointments/{a['id']}").status_code==404
+        assert other.post(f"/api/appointments/{a['id']}/cancel",json={'version':1,'reason':'Ajena','confirmed':True}).status_code==404
+        with SessionLocal() as db:
+            h=db.get(Appointment,a['id']).hold_id
+        assert other.get(f'/api/holds/{h}').status_code==404
+
+@pytest.mark.parametrize('change',['attended','policy','version'])
+def test_cancel_policy_state_and_version(patient,change):
+    a=appointment(patient,'Premium')
+    with SessionLocal.begin() as db:
+        entity=db.get(Appointment,a['id'])
+        if change=='attended': entity.status='ATTENDED'
+        if change=='policy':
+            entity.starts_at=now()+timedelta(minutes=30)
+            entity.ends_at=entity.starts_at+timedelta(minutes=30)
+        if change=='version': entity.version+=1
+    assert patient.post(f"/api/appointments/{a['id']}/cancel",json={'version':1,'reason':'Prueba','confirmed':True}).status_code==409
+
+def test_cancellation_requires_explicit_confirmation(patient):
+    a=appointment(patient,'Premium')
+    assert patient.post(f"/api/appointments/{a['id']}/cancel",json={'version':1,'reason':'Prueba','confirmed':False}).status_code==422
+    assert patient.get(f"/api/appointments/{a['id']}").json()['status']=='CONFIRMED'
+
+def test_transaction_rollback_confirmation(patient,monkeypatch):
+    activate(patient,'Premium')
+    h=hold(patient)
+    def broken(*args): raise OperationalError('injected transaction failure',{},Exception('test'))
+    monkeypatch.setattr(booking,'notify',broken)
+    with TestClient(app,raise_server_exceptions=False) as c:
+        c.cookies.update(patient.cookies)
+        assert c.post(f"/api/holds/{h['id']}/confirm").status_code==503
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(Appointment))==0
+        assert db.get(Hold,h['id']).status=='ACTIVE'
+        assert db.scalar(select(func.count()).select_from(StatusHistory))==0
+
+def test_transaction_rollback_cancellation(patient,monkeypatch):
+    a=appointment(patient,'Premium')
+    def broken(*args): raise OperationalError('injected failure',{},Exception('test'))
+    monkeypatch.setattr(booking,'notify',broken)
+    with TestClient(app,raise_server_exceptions=False) as c:
+        c.cookies.update(patient.cookies)
+        assert c.post(f"/api/appointments/{a['id']}/cancel",json={'version':1,'reason':'Prueba rollback','confirmed':True}).status_code==503
+    saved=patient.get(f"/api/appointments/{a['id']}").json()
+    assert saved['status']=='CONFIRMED' and saved['version']==1 and len(saved['history'])==1
+
+def test_database_constraints_and_seed_idempotent(patient):
+    a=appointment(patient,'Premium')
+    with SessionLocal() as db:
+        before={m.__tablename__:db.scalar(select(func.count()).select_from(m)) for m in [User,Doctor,Availability,Plan]}
+    seed()
+    with SessionLocal() as db:
+        after={m.__tablename__:db.scalar(select(func.count()).select_from(m)) for m in [User,Doctor,Availability,Plan]}
+        assert before==after
+        assert db.get(Appointment,a['id']).code==a['code']
+        assert db.scalar(text("SELECT count(*) FROM pg_constraint WHERE conname IN ('no_doctor_overlap','no_patient_overlap')"))==2
+
+def test_demo_payments_disabled(patient,monkeypatch):
+    import app.main as main
+    monkeypatch.setattr(main,'DEMO_MODE',False)
+    r=patient.post('/api/payments',json={'kind':'PLAN','target_id':1,'status':'APPROVED','idempotency_key':uuid4().hex})
+    assert r.status_code==403
