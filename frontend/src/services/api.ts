@@ -67,4 +67,13 @@ export const statuses: Record<string, string> = {
   REJECTED: "Rechazado",
   PENDING: "Pendiente",
   IN_RECONCILIATION: "En conciliación",
+  PROGRAMADA: "Programada",
+  SALA_DISPONIBLE: "Sala disponible",
+  PACIENTE_EN_ESPERA: "Paciente en espera",
+  MEDICO_EN_ESPERA: "Médico en espera",
+  EN_ATENCION: "En atención simulada",
+  FINALIZADA: "Finalizada",
+  PACIENTE_AUSENTE: "Paciente ausente",
+  MEDICO_AUSENTE: "Médico ausente",
+  VIRTUAL_PROGRAMADA: "Teleconsulta programada",
 };

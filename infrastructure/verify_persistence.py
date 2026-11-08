@@ -28,7 +28,12 @@ def main():
     slot = next(s for s in api(f"/doctors/{doctor['id']}/availability") if s['available'])
     hold = api('/holds', {'availability_id':slot['id']})
     appointment = api(f"/holds/{hold['id']}/confirm", {})
-    before = {'profile':api('/auth/me'),'plan':api('/my-plan'),'payments':api('/payments'),'appointment':api(f"/appointments/{appointment['id']}"),'notifications':api('/notifications')}
+    virtual_slot = next(s for s in api(f"/doctors/{doctor['id']}/availability?modality=VIRTUAL") if s['available'])
+    virtual_hold = api('/holds', {'availability_id':virtual_slot['id'],'modality':'VIRTUAL'})
+    virtual_appointment = api(f"/holds/{virtual_hold['id']}/confirm", {})
+    virtual_room_path = f"/appointments/{virtual_appointment['id']}/teleconsult"
+    api(f"{virtual_room_path}/status", {'status':'SALA_DISPONIBLE'})
+    before = {'profile':api('/auth/me'),'plan':api('/my-plan'),'payments':api('/payments'),'appointment':api(f"/appointments/{appointment['id']}"),'virtual_appointment':api(f"/appointments/{virtual_appointment['id']}"),'virtual_room':api(virtual_room_path),'notifications':api('/notifications')}
     subprocess.run(['docker','compose','restart'], cwd=ROOT, check=True)
     for attempt in range(45):
         try:
@@ -38,11 +43,13 @@ def main():
             time.sleep(1)
     else:
         raise RuntimeError('Los servicios no respondieron después del reinicio')
-    after = {'profile':api('/auth/me'),'plan':api('/my-plan'),'payments':api('/payments'),'appointment':api(f"/appointments/{appointment['id']}"),'notifications':api('/notifications')}
+    after = {'profile':api('/auth/me'),'plan':api('/my-plan'),'payments':api('/payments'),'appointment':api(f"/appointments/{appointment['id']}"),'virtual_appointment':api(f"/appointments/{virtual_appointment['id']}"),'virtual_room':api(virtual_room_path),'notifications':api('/notifications')}
     assert before == after, 'Los datos o la sesión cambiaron tras reiniciar los servicios'
     cancelled = api(f"/appointments/{appointment['id']}/cancel", {'version':1,'reason':'Fin de la prueba de persistencia','confirmed':True})
     assert cancelled['status'] == 'CANCELLED'
-    result = {'result':'PASS','user_id':account['id'],'payment_id':payment['id'],'appointment_code':appointment['code'],'verified':['sesión HttpOnly','perfil','plan activo y vigencia','pago','cita confirmada','historial','notificaciones'],'restart':'docker compose restart; volumen conservado','cancelled_after_restart':True}
+    virtual_cancelled = api(f"/appointments/{virtual_appointment['id']}/cancel", {'version':1,'reason':'Fin de la prueba de persistencia virtual','confirmed':True})
+    assert virtual_cancelled['status'] == 'CANCELLED'
+    result = {'result':'PASS','user_id':account['id'],'payment_id':payment['id'],'appointment_codes':[appointment['code'],virtual_appointment['code']],'verified':['sesión HttpOnly','perfil','plan activo y vigencia','pago','cita presencial confirmada','cita virtual confirmada','estado de sala virtual','historial','notificaciones'],'restart':'docker compose restart; volumen conservado','cancelled_after_restart':True}
     output = ROOT/'docs'/'persistence-result.json'
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding='utf-8')

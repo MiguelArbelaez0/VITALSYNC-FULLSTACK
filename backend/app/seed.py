@@ -33,13 +33,13 @@ def seed():
                 db.add(s)
                 db.flush()
             ids.append(s.id)
-        for name, price, copay, covered, desc in [('Básico', 59000, 15000, ids[:1], 'Tu cuidado esencial. Consultas de medicina general.'), ('Estándar', 109000, 10000, ids[:3], 'Más especialistas para acompañar tu bienestar.'), ('Premium', 189000, 0, ids, 'Todas las especialidades, sin copagos por consulta.')]:
+        for name, price, copay, covered, modalities, desc in [('Básico', 59000, 15000, ids[:1], ['PRESENCIAL'], 'Tu cuidado esencial. Consultas de medicina general.'), ('Estándar', 109000, 10000, ids[:3], ['PRESENCIAL','VIRTUAL'], 'Más especialistas y consultas presenciales o virtuales.'), ('Premium', 189000, 0, ids, ['PRESENCIAL','VIRTUAL'], 'Todas las especialidades y modalidades, sin copagos por consulta.')]:
             if not db.scalar(select(Plan.id).where(Plan.name == name)):
-                db.add(Plan(name=name, price=price, copay=copay, specialty_ids=covered, description=desc, duration_days=30))
+                db.add(Plan(name=name, price=price, copay=copay, specialty_ids=covered, modalities=modalities, description=desc, duration_days=30))
         for i, name in enumerate(['Dra. Isabella Ríos', 'Dr. Alejandro Méndez', 'Dra. Camila Restrepo', 'Dra. Sofía Herrera', 'Dr. Nicolás Vargas']):
             d = db.scalar(select(Doctor).where(Doctor.name == name))
             if not d:
-                d = Doctor(name=name, specialty_id=ids[i], bio=f'Profesional ficticio de demostración en {names[i].lower()}. Atención cercana, orientación preventiva y acompañamiento personalizado. Consultas presenciales de 30 minutos en la sede VITALSYNC Bogotá.')
+                d = Doctor(name=name, specialty_id=ids[i], bio=f'Profesional ficticio de demostración en {names[i].lower()}. Atención cercana, orientación preventiva y acompañamiento personalizado. Consultas presenciales y virtuales simuladas de 30 minutos.', modalities=['PRESENCIAL','VIRTUAL'])
                 db.add(d)
                 db.flush()
             today = datetime.now(ZoneInfo('America/Bogota')).replace(hour=9, minute=0, second=0, microsecond=0)
@@ -47,7 +47,8 @@ def seed():
                 for hour in [9, 10, 11, 14, 15, 16]:
                     start = (today + timedelta(days=day)).replace(hour=hour)
                     if not db.scalar(select(Availability.id).where(Availability.doctor_id == d.id, Availability.starts_at == start)):
-                        db.add(Availability(doctor_id=d.id, starts_at=start, ends_at=start + timedelta(minutes=30), published_by=admin.id))
+                        modes = d.modalities
+                        db.add(Availability(doctor_id=d.id, starts_at=start, ends_at=start + timedelta(minutes=30), published_by=admin.id, modalities=modes))
             blocked = (today + timedelta(days=1)).replace(hour=11)
             if not db.scalar(select(DoctorBlock.id).where(DoctorBlock.doctor_id == d.id, DoctorBlock.starts_at == blocked)):
                 db.add(DoctorBlock(doctor_id=d.id, starts_at=blocked, ends_at=blocked + timedelta(minutes=30), reason='Bloqueo administrativo de demostración'))

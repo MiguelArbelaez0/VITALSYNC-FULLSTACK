@@ -12,6 +12,7 @@ import { Booking } from "../features/appointments/Booking";
 import {
   AppointmentDetail,
   Appointments,
+  Teleconsultation,
 } from "../features/appointments/Appointments";
 import { PaymentControls } from "../features/plans/Plans";
 const user = {
@@ -172,7 +173,7 @@ describe("Datos, estados y disponibilidad", () => {
     const fetch = mockApi(
       {
         "/specialties": [{ id: 1, name: "Medicina general" }],
-        "/doctors?search=": [
+        "/doctors?search=&modality=PRESENCIAL": [
           { id: 1, name: "Dra. Isabella Ríos", specialty: "Medicina general" },
         ],
       },
@@ -200,8 +201,8 @@ describe("Datos, estados y disponibilidad", () => {
           specialty_id: 1,
           bio: "Perfil ficticio",
         },
-        "/my-plan": { status: "ACTIVE", plan: { id: 1, specialty_ids: [1] } },
-        "/doctors/1/availability": [
+        "/my-plan": { status: "ACTIVE", plan: { id: 1, specialty_ids: [1], modalities: ["PRESENCIAL"] } },
+        "/doctors/1/availability?modality=PRESENCIAL": [
           {
             id: 10,
             starts_at: "2026-11-12T14:00:00Z",
@@ -233,11 +234,49 @@ describe("Datos, estados y disponibilidad", () => {
     );
     expect(await screen.findByText("Retención creada")).toBeInTheDocument();
     expect(fetch.mock.calls.find((c) => c[0] === "/api/holds")?.[1]?.body).toBe(
-      JSON.stringify({ availability_id: 11 }),
+      JSON.stringify({ availability_id: 11, modality: "PRESENCIAL" }),
     );
   });
 });
 describe("Reserva, comprobante y cancelación", () => {
+  it("la sala virtual muestra avisos explícitos y persiste estados", async () => {
+    const fetch = mockApi(
+      {
+        "/appointments/1/teleconsult": {
+          ...appointment,
+          modality: "VIRTUAL",
+          virtual_status: "PROGRAMADA",
+          message: "Teleconsulta simulada — sin conexión de audio o video",
+        },
+      },
+      (path) =>
+        path === "/appointments/1/teleconsult/status"
+          ? respond({ status: "SALA_DISPONIBLE" })
+          : undefined,
+    );
+    wrapper(<Routes><Route path="/portal/appointments/:id/teleconsult" element={<Teleconsultation/>}/></Routes>, "/portal/appointments/1/teleconsult");
+    expect(await screen.findByText("Teleconsulta simulada — sin conexión de audio o video")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Sala disponible/ }));
+    expect(fetch.mock.calls.some((c) => c[0] === "/api/appointments/1/teleconsult/status")).toBe(true);
+  });
+  it("ofrece simular la ausencia del paciente cuando la sala está disponible", async () => {
+    const fetch = mockApi(
+      {
+        "/appointments/1/teleconsult": {
+          ...appointment,
+          modality: "VIRTUAL",
+          virtual_status: "SALA_DISPONIBLE",
+          message: "Teleconsulta simulada — sin conexión de audio o video",
+        },
+      },
+      (path) => path === "/appointments/1/teleconsult/status"
+        ? respond({ status: "PACIENTE_AUSENTE" })
+        : undefined,
+    );
+    wrapper(<Routes><Route path="/portal/appointments/:id/teleconsult" element={<Teleconsultation/>}/></Routes>, "/portal/appointments/1/teleconsult");
+    await userEvent.click(await screen.findByRole("button", { name: "Simular estado: Paciente ausente" }));
+    expect(fetch.mock.calls.some((call) => call[1]?.body === JSON.stringify({ status: "PACIENTE_AUSENTE" }))).toBe(true);
+  });
   it("confirma una retención sin copago por API", async () => {
     const fetch = mockApi(
       {

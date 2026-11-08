@@ -5,11 +5,12 @@ import {
   CalendarDays,
   Clock3,
   MapPin,
+  Monitor,
   Search,
   ShieldCheck,
 } from "lucide-react";
 import { api, post, dateText, dayKey, timeText } from "../../services/api";
-import type { Doctor, Specialty, Slot, Hold, Membership } from "../../types";
+import type { Doctor, Specialty, Slot, Hold, Membership, Modality } from "../../types";
 import {
   Empty,
   ErrorBox,
@@ -21,13 +22,16 @@ import { Button } from "../../components/ui/button";
 export function Doctors() {
   const [search, setSearch] = useState("");
   const [specialty, setSpecialty] = useState("");
+  const initialModality = new URLSearchParams(window.location.search).get("modality");
+  const [modality, setModality] = useState<Modality>(initialModality === "VIRTUAL" ? "VIRTUAL" : "PRESENCIAL");
   const q = useQuery({
-    queryKey: ["doctors", search, specialty],
+    queryKey: ["doctors", search, specialty, modality],
     queryFn: () =>
       api<Doctor[]>(
         "/doctors?search=" +
           encodeURIComponent(search) +
-          (specialty ? "&specialty_id=" + specialty : ""),
+          (specialty ? "&specialty_id=" + specialty : "") +
+          "&modality=" + modality,
       ),
   });
   const s = useQuery({
@@ -40,6 +44,13 @@ export function Doctors() {
         title="El cuidado que necesitas"
         description="Encuentra al profesional que te acompañará en tu próximo paso."
       />
+      <section className="modality-picker" aria-label="Modalidad de atención">
+        <h2>¿Qué modalidad de atención necesitas?</h2>
+        <div className="modality-options">
+          <button aria-pressed={modality === "PRESENCIAL"} className={modality === "PRESENCIAL" ? "selected" : ""} onClick={() => setModality("PRESENCIAL")}><MapPin/><span><strong>Cita presencial</strong><small>Atención en sede VITALSYNC</small></span></button>
+          <button aria-pressed={modality === "VIRTUAL"} className={modality === "VIRTUAL" ? "selected" : ""} onClick={() => setModality("VIRTUAL")}><Monitor/><span><strong>Cita virtual</strong><small>Teleconsulta simulada, sin audio ni video</small></span></button>
+        </div>
+      </section>
       <div className="filters">
         <label className="search-field">
           <Search size={20} />
@@ -103,13 +114,13 @@ export function Doctors() {
                   <span className="eyebrow">{d.specialty}</span>
                   <h2>{d.name}</h2>
                   <p>
-                    <MapPin size={15} />
-                    Bogotá · Consulta presencial
+                    {modality === "VIRTUAL" ? <Monitor size={15} /> : <MapPin size={15} />}
+                    {modality === "VIRTUAL" ? "Teleconsulta simulada" : "Bogotá · Consulta presencial"}
                   </p>
                   <p className="doctor-summary">
                     Atención cercana y personalizada para tu bienestar.
                   </p>
-                  <Go to={"/portal/doctors/" + d.id}>
+                  <Go to={"/portal/doctors/" + d.id + "?modality=" + modality}>
                     Ver perfil y disponibilidad
                   </Go>
                 </div>
@@ -123,6 +134,8 @@ export function Doctors() {
 }
 export function DoctorProfile() {
   const { id } = useParams();
+  const initialModality = new URLSearchParams(window.location.search).get("modality");
+  const [modality, setModality] = useState<Modality>(initialModality === "VIRTUAL" ? "VIRTUAL" : "PRESENCIAL");
   const navigate = useNavigate();
   const client = useQueryClient();
   const [day, setDay] = useState("");
@@ -134,8 +147,8 @@ export function DoctorProfile() {
     queryFn: () => api<Doctor>("/doctors/" + id),
   });
   const slots = useQuery({
-    queryKey: ["availability", id],
-    queryFn: () => api<Slot[]>("/doctors/" + id + "/availability"),
+    queryKey: ["availability", id, modality],
+    queryFn: () => api<Slot[]>("/doctors/" + id + "/availability?modality=" + modality),
     refetchInterval: 20_000,
   });
   const plan = useQuery({
@@ -149,7 +162,7 @@ export function DoctorProfile() {
     setError(null);
     setBusy(true);
     try {
-      const h = await post<Hold>("/holds", { availability_id: selected });
+      const h = await post<Hold>("/holds", { availability_id: selected, modality });
       await client.invalidateQueries({ queryKey: ["availability"] });
       navigate("/portal/booking/" + h.id);
     } catch (e) {
@@ -182,13 +195,10 @@ export function DoctorProfile() {
           </span>
           <h2>Conoce a tu especialista</h2>
           <p>{d.data.bio}</p>
-          <div className="info-line">
-            <MapPin />
-            Sede VITALSYNC · Bogotá
-          </div>
+          {modality === "PRESENCIAL" && <div className="info-line"><MapPin />Sede VITALSYNC · Bogotá (ficticia)</div>}
           <div className="info-line">
             <Clock3 />
-            Consulta presencial · 30 minutos
+            {modality === "VIRTUAL" ? "Cita virtual simulada · 30 minutos" : "Consulta presencial · 30 minutos"}
           </div>
           <div className="notice">
             <strong>Profesional de demostración</strong>
@@ -199,6 +209,10 @@ export function DoctorProfile() {
           </div>
         </section>
         <section className="panel availability-panel">
+          <div className="modality-toggle" aria-label="Modalidad de atención">
+            <button aria-pressed={modality === "PRESENCIAL"} className={modality === "PRESENCIAL" ? "selected" : ""} onClick={() => {setModality("PRESENCIAL"); setSelected(null)}}><MapPin size={17}/> Presencial</button>
+            <button aria-pressed={modality === "VIRTUAL"} className={modality === "VIRTUAL" ? "selected" : ""} onClick={() => {setModality("VIRTUAL"); setSelected(null)}}><Monitor size={17}/> Virtual</button>
+          </div>
           <div className="section-heading">
             <h2>
               <CalendarDays size={22} />
@@ -221,7 +235,7 @@ export function DoctorProfile() {
             </div>
           )}
           {plan.data?.status === "ACTIVE" &&
-            !plan.data.plan?.specialty_ids.includes(d.data.specialty_id) && (
+            (!plan.data.plan?.specialty_ids?.includes(d.data.specialty_id) || !plan.data.plan?.modalities?.includes(modality)) && (
               <div className="alert error">
                 Tu plan no cubre esta especialidad.{" "}
                 <Link to="/portal/plans">Ver planes</Link>

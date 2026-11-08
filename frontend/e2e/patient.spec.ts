@@ -1,5 +1,23 @@
 import { resolve } from "node:path";
 import { test, expect } from "@playwright/test";
+
+async function chooseAvailableSlot(page: import("@playwright/test").Page) {
+  const dateSelect = page.getByLabel("Fecha de consulta");
+  await expect(dateSelect).toBeVisible();
+  const dates = await dateSelect.locator("option").evaluateAll((options) =>
+    options.map((option) => (option as HTMLOptionElement).value),
+  );
+  for (const date of dates) {
+    await dateSelect.selectOption(date);
+    const slot = page.locator(".time-slot:not([disabled])").first();
+    if ((await slot.count()) > 0) {
+      await slot.click();
+      return;
+    }
+  }
+  throw new Error("No hay turnos disponibles en las fechas publicadas");
+}
+
 test("Paciente real: registro, login, plan, copago, cita y cancelación", async ({
   page,
 }, testInfo) => {
@@ -34,7 +52,7 @@ test("Paciente real: registro, login, plan, copago, cita y cancelación", async 
     .getByRole("link", { name: "Ver perfil y disponibilidad" })
     .first()
     .click();
-  await page.locator(".time-slot:not([disabled])").first().click();
+  await chooseAvailableSlot(page);
   await page
     .getByRole("button", { name: "Retener horario y continuar" })
     .click();
@@ -60,7 +78,7 @@ test("Paciente real: registro, login, plan, copago, cita y cancelación", async 
     .getByLabel("Filtrar por especialidad")
     .selectOption({ label: "Medicina general" });
   await page.getByRole("link", { name: "Ver perfil y disponibilidad" }).click();
-  await page.locator(".time-slot:not([disabled])").first().click();
+  await chooseAvailableSlot(page);
   await page
     .getByRole("button", { name: "Retener horario y continuar" })
     .click();
@@ -127,5 +145,42 @@ test("Paciente real: registro, login, plan, copago, cita y cancelación", async 
     ),
   ).toBeTruthy();
   await page.goto(appointmentUrl);
+  await expect(page.getByText("Cancelada", { exact: true })).toBeVisible();
+  await page.goto("/portal/plans");
+  await page
+    .locator(".plan-card")
+    .filter({ has: page.getByRole("heading", { name: "Estándar", exact: true }) })
+    .getByRole("button", { name: "Activar plan" })
+    .click();
+  await page.getByRole("button", { name: "Autorizar y simular aprobación" }).click();
+  await expect(page.getByRole("status")).toContainText("Tu plan se activó");
+  await page.goto("/portal/doctors?modality=VIRTUAL");
+  await expect(page.getByRole("heading", { name: "¿Qué modalidad de atención necesitas?" })).toBeVisible();
+  await page.getByRole("link", { name: "Ver perfil y disponibilidad" }).first().click();
+  await expect(page.getByRole("button", { name: /Virtual/ })).toHaveAttribute("aria-pressed", "true");
+  await chooseAvailableSlot(page);
+  await page.getByRole("button", { name: "Retener horario y continuar" }).click();
+  await expect(page.locator(".booking-summary")).toContainText("Virtual · Sala demostrativa");
+  await page.getByRole("button", { name: "Autorizar y simular aprobación" }).click();
+  await page.getByRole("button", { name: "Confirmar cita", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "¡Tu cita está confirmada!" })).toBeVisible();
+  await expect(page.locator(".receipt")).toContainText("Virtual · Teleconsulta simulada");
+  await page.getByRole("link", { name: "Ver teleconsulta simulada" }).click();
+  await expect(page.getByText("Teleconsulta simulada — sin conexión de audio o video")).toBeVisible();
+  await page.getByRole("button", { name: /Simular siguiente estado: Sala disponible/ }).click();
+  await expect(page.getByText("Sala disponible")).toBeVisible();
+  await page.screenshot({
+    path: resolve(
+      import.meta.dirname,
+      "../../docs/screenshots",
+      `teleconsult-${testInfo.project.name}.png`,
+    ),
+    fullPage: true,
+  });
+  await page.getByRole("link", { name: "Volver al comprobante" }).click();
+  await page.getByRole("button", { name: "Cancelar cita", exact: true }).click();
+  await page.getByLabel("Motivo de cancelación").fill("Liberar horario al finalizar E2E");
+  await page.getByLabel("Confirmo que deseo cancelar mi cita.").check();
+  await page.getByRole("button", { name: "Confirmar cancelación" }).click();
   await expect(page.getByText("Cancelada", { exact: true })).toBeVisible();
 });

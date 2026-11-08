@@ -352,3 +352,92 @@ def test_concurrent_cancellation_changes_once(patient):
     assert saved['version']==2 and len(saved['history'])==2
     notices=patient.get('/api/notifications').json()
     assert sum('ha sido cancelada' in n['message'] for n in notices)==1
+
+def virtual_slot(c, doctor_id=1):
+    return next(s for s in c.get(f'/api/doctors/{doctor_id}/availability?modality=VIRTUAL').json() if s['available'])
+
+def test_existing_appointments_default_to_in_person_and_virtual_doctors_are_filtered(patient):
+    old=appointment(patient,'Premium')
+    assert old['modality']=='PRESENCIAL'
+    assert patient.get('/api/doctors?modality=VIRTUAL').status_code==200
+    assert patient.get('/api/doctors?modality=VIRTUAL').json()[0]['modalities']==['PRESENCIAL','VIRTUAL']
+    assert patient.get('/api/doctors?modality=NOPE').status_code==422
+    assert patient.get('/api/doctors/1/availability?modality=VIRTUAL').json()
+
+def test_plan_without_virtual_coverage_rejected_before_hold_or_copay(patient):
+    activate(patient,'Básico')
+    slot=virtual_slot(patient,1)
+    error=patient.post('/api/holds',json={'availability_id':slot['id'],'modality':'VIRTUAL'})
+    assert error.status_code==409 and 'no cubre la modalidad virtual' in error.json()['detail']
+    assert patient.get('/api/appointments').json()==[]
+    assert all(p['kind']=='PLAN' for p in patient.get('/api/payments').json())
+
+def test_standard_plan_virtual_copay_confirmation_and_receipt(patient):
+    activate(patient,'Estándar')
+    slot=virtual_slot(patient,1)
+    h=patient.post('/api/holds',json={'availability_id':slot['id'],'modality':'VIRTUAL'}).json()
+    assert h['modality']=='VIRTUAL' and h['copay']==10000
+    p=copay(patient,h)
+    assert p.status_code==200
+    confirmed=patient.post(f"/api/holds/{h['id']}/confirm")
+    assert confirmed.status_code==200
+    receipt=patient.get(f"/api/appointments/{confirmed.json()['id']}").json()
+    assert receipt['modality']=='VIRTUAL' and receipt['location'] is None and receipt['virtual_status']=='PROGRAMADA'
+    assert patient.get('/api/appointments').json()[0]['modality']=='VIRTUAL'
+
+def test_virtual_same_slot_conflicts_with_in_person_booking(patient):
+    current=appointment(patient,'Premium')
+    with TestClient(app) as other:
+        other.post('/api/auth/register',json={'name':'Paciente Virtual','email':'virtual-conflict@example.com','password':'Paciente2026!'})
+        activate(other,'Premium')
+        with SessionLocal.begin() as db:
+            original=db.get(Appointment,current['id'])
+            slot_id=db.get(Hold,original.hold_id).availability_id
+        r=other.post('/api/holds',json={'availability_id':slot_id,'modality':'VIRTUAL'})
+        assert r.status_code==409 and 'ocupado' in r.json()['detail']
+        assert other.get('/api/appointments').json()==[]
+
+def test_virtual_room_state_transitions_and_access_control(patient):
+    activate(patient,'Premium')
+    h=patient.post('/api/holds',json={'availability_id':virtual_slot(patient)['id'],'modality':'VIRTUAL'}).json()
+    aid=patient.post(f"/api/holds/{h['id']}/confirm").json()['id']
+    room=patient.get(f'/api/appointments/{aid}/teleconsult')
+    assert room.status_code==200 and 'sin conexión de audio o video' in room.json()['message'].lower()
+    for step in ['SALA_DISPONIBLE','PACIENTE_EN_ESPERA','MEDICO_EN_ESPERA','EN_ATENCION','FINALIZADA']:
+        r=patient.post(f'/api/appointments/{aid}/teleconsult/status',json={'status':step})
+        assert r.status_code==200 and r.json()['status']==step
+    assert patient.post(f'/api/appointments/{aid}/teleconsult/status',json={'status':'EN_ATENCION'}).status_code==409
+    with TestClient(app) as other:
+        other.post('/api/auth/register',json={'name':'Otro Paciente','email':'teleconsult-denied@example.com','password':'Paciente2026!'})
+        assert other.get(f'/api/appointments/{aid}/teleconsult').status_code==404
+        assert other.post(f'/api/appointments/{aid}/teleconsult/status',json={'status':'SALA_DISPONIBLE'}).status_code==404
+    data={'version':1,'reason':'El paciente cancela su cita virtual','confirmed':True}
+    assert patient.post(f'/api/appointments/{aid}/cancel',json=data).status_code==200
+    assert patient.get(f'/api/appointments/{aid}/teleconsult').status_code==404
+    with SessionLocal() as db:
+        assert db.get(VirtualConsultation,aid).status=='CANCELADA'
+
+def test_virtual_absence_outcomes_are_available_only_at_allowed_steps(patient):
+    activate(patient,'Premium')
+    first=patient.post('/api/holds',json={'availability_id':virtual_slot(patient)['id'],'modality':'VIRTUAL'}).json()
+    first_id=patient.post(f"/api/holds/{first['id']}/confirm").json()['id']
+    assert patient.post(f'/api/appointments/{first_id}/teleconsult/status',json={'status':'SALA_DISPONIBLE'}).status_code==200
+    absent=patient.post(f'/api/appointments/{first_id}/teleconsult/status',json={'status':'PACIENTE_AUSENTE'})
+    assert absent.status_code==200 and absent.json()['status']=='PACIENTE_AUSENTE'
+    assert patient.post(f'/api/appointments/{first_id}/teleconsult/status',json={'status':'EN_ATENCION'}).status_code==409
+
+    second=patient.post('/api/holds',json={'availability_id':virtual_slot(patient)['id'],'modality':'VIRTUAL'}).json()
+    second_id=patient.post(f"/api/holds/{second['id']}/confirm").json()['id']
+    for step in ['SALA_DISPONIBLE','PACIENTE_EN_ESPERA']:
+        assert patient.post(f'/api/appointments/{second_id}/teleconsult/status',json={'status':step}).status_code==200
+    absent=patient.post(f'/api/appointments/{second_id}/teleconsult/status',json={'status':'MEDICO_AUSENTE'})
+    assert absent.status_code==200 and absent.json()['status']=='MEDICO_AUSENTE'
+
+def test_virtual_appointment_migration_preserves_preexisting_data(patient):
+    with SessionLocal() as db:
+        old_count=db.scalar(select(func.count()).select_from(Appointment))
+    seed()
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(Appointment))==old_count
+        assert db.scalar(text("SELECT count(*) FROM appointments WHERE modality NOT IN ('PRESENCIAL','VIRTUAL')"))==0
+        assert db.scalar(text("SELECT count(*) FROM doctor_availability WHERE modalities @> '[\"PRESENCIAL\"]'::jsonb"))>0

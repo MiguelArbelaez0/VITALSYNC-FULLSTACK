@@ -13,6 +13,7 @@ import {
   Appointments,
   AppointmentDetail,
 } from "../features/appointments/Appointments";
+import { Teleconsultation } from "../features/appointments/Appointments";
 import { Notifications } from "../features/notifications/Notifications";
 export function Protected() {
   const { user, loading, error } = useAuth();
@@ -43,6 +44,7 @@ export function App() {
           <Route path="booking/:id" element={<Booking />} />
           <Route path="appointments" element={<Appointments />} />
           <Route path="appointments/:id" element={<AppointmentDetail />} />
+          <Route path="appointments/:id/teleconsult" element={<Teleconsultation />} />
           <Route path="notifications" element={<Notifications />} />
         </Route>
       </Route>

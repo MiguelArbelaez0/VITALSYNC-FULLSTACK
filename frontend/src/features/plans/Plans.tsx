@@ -253,6 +253,7 @@ export function Plans() {
                     </li>
                   ))}
               </ul>
+              <p className="coverage-modalities">Modalidades: {p.modalities.map((x) => x === "VIRTUAL" ? "Virtual" : "Presencial").join(" · ")}</p>
               <Button
                 className="full"
                 variant={i === 1 ? "default" : "outline"}

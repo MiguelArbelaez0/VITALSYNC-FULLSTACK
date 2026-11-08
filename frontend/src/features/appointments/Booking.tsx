@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Check, Clock3, ShieldCheck } from "lucide-react";
+import { Check, Clock3, ShieldCheck, MapPin, Monitor } from "lucide-react";
 import type { Hold, Doctor, Appointment } from "../../types";
 import { api, post, dateText, timeText, money } from "../../services/api";
 import {
@@ -103,7 +103,7 @@ export function Booking() {
             </div>
             <div>
               <dt>Modalidad</dt>
-              <dd>Presencial · Sede Bogotá</dd>
+              <dd>{h.data.modality === 'VIRTUAL' ? <><Monitor size={16}/> Virtual · Sala demostrativa</> : <><MapPin size={16}/> Presencial · Sede Bogotá</>}</dd>
             </div>
             <div>
               <dt>Copago</dt>

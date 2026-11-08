@@ -857,6 +857,15 @@ form {
     transform: rotate(360deg);
   }
 }
+.modality-picker {background:#fff;border:1px solid var(--border);border-radius:14px;padding:22px;margin:0 0 22px}
+.modality-picker h2 {font-size:15px;margin:0 0 15px}
+.modality-options {display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.modality-options button,.modality-toggle button {display:flex;align-items:center;gap:12px;text-align:left;background:#fff;border:1px solid var(--border);border-radius:10px;padding:15px;color:#54717d}
+.modality-options button.selected,.modality-toggle button.selected {border-color:#228e96;background:#eff8f8;color:#147784}
+.modality-options strong {display:block;font-size:12px}.modality-options small {display:block;color:#81949e;font-size:10px;margin-top:3px}
+.modality-toggle {display:flex;gap:8px;margin-bottom:18px}.modality-toggle button {font-size:12px;padding:10px 14px}
+.coverage-modalities {font-size:10px;color:#59818b;border-top:1px solid var(--border);padding:12px 0;margin:0 0 16px}
+.virtual-room {max-width:760px;margin:0 auto}.virtual-room>svg {color:var(--primary);background:#e8f5f5;border-radius:14px;padding:12px;width:65px;height:65px}.virtual-room h2 {margin:17px 0}.virtual-link .btn {margin-top:12px}
 .filters {
   display: flex;
   gap: 15px;
@@ -1957,6 +1966,8 @@ dd {
   }
 }
 @media (max-width: 760px) {
+  .modality-picker {padding:18px 14px}
+  .modality-options {grid-template-columns:1fr}
   .mobile-only {
     display: flex;
   }

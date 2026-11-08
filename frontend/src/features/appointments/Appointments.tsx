@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { CalendarDays, CheckCircle2, Clock3, Printer } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock3, Printer, MapPin, Monitor } from "lucide-react";
 import {
   api,
   post,
@@ -113,7 +113,7 @@ export function Appointments() {
                 </span>
                 <span>
                   <Clock3 size={17} />
-                  {timeText(a.starts_at)} · Presencial
+                  {a.modality === 'VIRTUAL' ? 'Virtual' : 'Presencial'} · {timeText(a.starts_at)}
                 </span>
               </div>
               <Button asChild variant="outline">
@@ -225,8 +225,8 @@ export function AppointmentDetail() {
             <dd>{a.copay ? money(a.copay) : "No requerido"}</dd>
           </div>
           <div>
-            <dt>Lugar de consulta</dt>
-            <dd>Presencial · Sede VITALSYNC Bogotá (ficticia)</dd>
+            <dt>Modalidad</dt>
+            <dd>{a.modality === 'VIRTUAL' ? 'Virtual · Teleconsulta simulada' : 'Presencial · Sede VITALSYNC Bogotá (ficticia)'}</dd>
           </div>
         </dl>
         {a.status === "CANCELLED" && (
@@ -269,6 +269,9 @@ export function AppointmentDetail() {
               Cancelar cita
             </Button>
           </div>
+        )}
+        {a.modality === 'VIRTUAL' && a.status === 'CONFIRMED' && (
+          <div className="notice virtual-link"><strong>Teleconsulta simulada</strong><p>Esta experiencia no usa conexión de audio o video.</p><Button asChild><Link to={'/portal/appointments/'+a.id+'/teleconsult'}><Monitor size={17}/>Ver teleconsulta simulada</Link></Button></div>
         )}
       </section>
       <Dialog
@@ -341,6 +344,85 @@ export function AppointmentDetail() {
           </div>
         </form>
       </Dialog>
+    </>
+  );
+}
+
+export function Teleconsultation() {
+  const { id } = useParams();
+  const client = useQueryClient();
+  const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const q = useQuery({
+    queryKey: ["teleconsult", id],
+    queryFn: () => api<Appointment>("/appointments/" + id + "/teleconsult"),
+  });
+  async function advance(status: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await post("/appointments/" + id + "/teleconsult/status", { status });
+      await client.invalidateQueries({ queryKey: ["teleconsult", id] });
+      await client.invalidateQueries({ queryKey: ["appointment", id] });
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+  if (q.isPending) return <Loading />;
+  if (q.error) return <ErrorBox error={q.error} />;
+  const a = q.data;
+  const status = a.virtual_status ?? "PROGRAMADA";
+  const next: Record<string, string> = {
+    PROGRAMADA: "SALA_DISPONIBLE",
+    SALA_DISPONIBLE: "PACIENTE_EN_ESPERA",
+    PACIENTE_EN_ESPERA: "MEDICO_EN_ESPERA",
+    MEDICO_EN_ESPERA: "EN_ATENCION",
+    EN_ATENCION: "FINALIZADA",
+  };
+  const optional: Record<string, string[]> = {
+    SALA_DISPONIBLE: ["PACIENTE_AUSENTE"],
+    PACIENTE_EN_ESPERA: ["MEDICO_AUSENTE"],
+  };
+  return (
+    <>
+      <Link className="text-link back-link" to={"/portal/appointments/" + id}>
+        ← Volver al comprobante
+      </Link>
+      <PageTitle
+        eyebrow="EXPERIENCIA DE DEMOSTRACIÓN"
+        title="Teleconsulta simulada"
+        description="Representación de estados de una cita virtual. No se conecta audio ni video."
+      />
+      <section className="panel virtual-room">
+        <Monitor size={50} />
+        <h2>Sin conexión de audio o video</h2>
+        <div className="alert success">
+          Teleconsulta simulada — sin conexión de audio o video
+        </div>
+        <Badge status={status} />
+        <dl>
+          <div><dt>Paciente</dt><dd>{a.patient}</dd></div>
+          <div><dt>Médico</dt><dd>{a.doctor}</dd></div>
+          <div><dt>Especialidad</dt><dd>{a.specialty}</dd></div>
+          <div><dt>Fecha</dt><dd>{dateText(a.starts_at)}</dd></div>
+          <div><dt>Hora</dt><dd>{timeText(a.starts_at)} · Bogotá</dd></div>
+          <div><dt>Estado de la cita</dt><dd>{statuses[a.status]}</dd></div>
+        </dl>
+        <p>Cambios de estado solo demostrativos; no acreditan atención médica real.</p>
+        {a.status === "CONFIRMED" && next[status] && (
+          <Button disabled={busy} onClick={() => void advance(next[status])}>
+            Simular siguiente estado: {statuses[next[status]] ?? next[status]}
+          </Button>
+        )}
+        {a.status === "CONFIRMED" && (optional[status] ?? []).map((choice) => (
+          <Button key={choice} variant="outline" disabled={busy} onClick={() => void advance(choice)}>
+            Simular estado: {statuses[choice] ?? choice}
+          </Button>
+        ))}
+        <ErrorBox error={error} />
+      </section>
     </>
   );
 }

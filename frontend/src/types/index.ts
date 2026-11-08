@@ -13,7 +13,9 @@ export interface Plan {
   copay: number;
   duration_days: number;
   specialty_ids: number[];
+  modalities: Modality[];
 }
+export type Modality = 'PRESENCIAL' | 'VIRTUAL';
 export interface Membership {
   status: string;
   plan: Plan | null;
@@ -30,12 +32,14 @@ export interface Doctor {
   specialty: string;
   bio: string;
   enabled: boolean;
+  modalities: Modality[];
 }
 export interface Slot {
   id: number;
   starts_at: string;
   ends_at: string;
   available: boolean;
+  modalities: Modality[];
 }
 export interface Hold {
   id: number;
@@ -45,6 +49,7 @@ export interface Hold {
   expires_at: string;
   copay: number;
   status: string;
+  modality: Modality;
 }
 export interface Payment {
   id: number;
@@ -67,9 +72,12 @@ export interface Appointment {
   status: string;
   version: number;
   copay: number;
+  modality: Modality;
   cancelled_at: string | null;
   cancellation_reason: string | null;
   economic_review: boolean;
+  location: string|null;
+  virtual_status: string|null;
   history?: {
     id: number;
     status: string;

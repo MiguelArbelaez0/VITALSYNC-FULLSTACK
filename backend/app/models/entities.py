@@ -37,6 +37,7 @@ class Doctor(Base):
     name = Column(String(120), nullable=False, unique=True)
     specialty_id = Column(Integer, ForeignKey('specialties.id'), nullable=False, index=True)
     bio = Column(Text, nullable=False)
+    modalities = Column(JSONB, nullable=False, default=lambda: ['PRESENCIAL'])
     enabled = Column(Boolean, default=True, nullable=False)
 
 class Availability(Base):
@@ -47,6 +48,7 @@ class Availability(Base):
     ends_at = Column(DateTime(timezone=True), nullable=False)
     published_by = Column(Integer, ForeignKey('users.id'), nullable=False)
     published = Column(Boolean, default=True, nullable=False)
+    modalities = Column(JSONB, nullable=False, default=lambda: ['PRESENCIAL'])
     __table_args__ = (UniqueConstraint('doctor_id', 'starts_at'), CheckConstraint('ends_at > starts_at'))
 
 class DoctorBlock(Base):
@@ -67,6 +69,7 @@ class Plan(Base):
     duration_days = Column(Integer, default=30, nullable=False)
     copay = Column(Integer, nullable=False)
     specialty_ids = Column(JSONB, nullable=False)
+    modalities = Column(JSONB, nullable=False, default=lambda: ['PRESENCIAL'])
     enabled = Column(Boolean, default=True, nullable=False)
     __table_args__ = (CheckConstraint('price >= 0 AND copay >= 0 AND duration_days > 0'),)
 
@@ -89,8 +92,9 @@ class Hold(Base):
     ends_at = Column(DateTime(timezone=True), nullable=False)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     copay = Column(Integer, nullable=False)
+    modality = Column(String(12), nullable=False, default='PRESENCIAL')
     status = Column(String(16), default='ACTIVE', nullable=False)
-    __table_args__ = (CheckConstraint("status IN ('ACTIVE','CONFIRMED','RELEASED')"), CheckConstraint('ends_at > starts_at AND copay >= 0'))
+    __table_args__ = (CheckConstraint("status IN ('ACTIVE','CONFIRMED','RELEASED')"), CheckConstraint("modality IN ('PRESENCIAL','VIRTUAL')"), CheckConstraint('ends_at > starts_at AND copay >= 0'))
 
 class Payment(Base):
     __tablename__ = 'payments'
@@ -117,19 +121,29 @@ class Appointment(Base):
     starts_at = Column(DateTime(timezone=True), nullable=False)
     ends_at = Column(DateTime(timezone=True), nullable=False)
     copay = Column(Integer, nullable=False)
+    modality = Column(String(12), nullable=False, default='PRESENCIAL')
     status = Column(String(16), nullable=False, default='CONFIRMED')
     version = Column(Integer, default=1, nullable=False)
     cancelled_at = Column(DateTime(timezone=True))
     cancelled_by = Column(Integer, ForeignKey('users.id'))
     cancellation_reason = Column(Text)
     economic_review = Column(Boolean, default=False, nullable=False)
-    __table_args__ = (CheckConstraint("status IN ('CONFIRMED','CANCELLED','ATTENDED')"), CheckConstraint('ends_at > starts_at'), Index('uq_confirmed_slot', 'doctor_id', 'starts_at', unique=True, postgresql_where=(status == 'CONFIRMED')))
+    __table_args__ = (CheckConstraint("status IN ('CONFIRMED','CANCELLED','ATTENDED')"), CheckConstraint("modality IN ('PRESENCIAL','VIRTUAL')"), CheckConstraint('ends_at > starts_at'), Index('uq_confirmed_slot', 'doctor_id', 'starts_at', unique=True, postgresql_where=(status == 'CONFIRMED')))
+
+class VirtualConsultation(Base):
+    __tablename__ = 'virtual_consultations'
+    appointment_id = Column(Integer, ForeignKey('appointments.id'), primary_key=True)
+    patient_id = Column(Integer, ForeignKey('patients.id'), nullable=False, index=True)
+    doctor_id = Column(Integer, ForeignKey('doctors.id'), nullable=False, index=True)
+    status = Column(String(24), nullable=False, default='PROGRAMADA')
+    updated_at = Column(DateTime(timezone=True), default=now, nullable=False)
+    __table_args__ = (CheckConstraint("status IN ('PROGRAMADA','SALA_DISPONIBLE','PACIENTE_EN_ESPERA','MEDICO_EN_ESPERA','EN_ATENCION','FINALIZADA','PACIENTE_AUSENTE','MEDICO_AUSENTE','CANCELADA')"),)
 
 class StatusHistory(Base):
     __tablename__ = 'appointment_status_history'
     id = Column(Integer, primary_key=True)
     appointment_id = Column(Integer, ForeignKey('appointments.id'), nullable=False, index=True)
-    status = Column(String(16), nullable=False)
+    status = Column(String(32), nullable=False)
     author_id = Column(Integer, ForeignKey('users.id'), nullable=False)
     reason = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), default=now, nullable=False)

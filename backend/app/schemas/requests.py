@@ -29,6 +29,10 @@ class Reconcile(Input):
 
 class HoldInput(Input):
     availability_id: int = Field(gt=0)
+    modality: Literal['PRESENCIAL', 'VIRTUAL'] = 'PRESENCIAL'
+
+class TeleconsultationStatus(Input):
+    status: Literal['SALA_DISPONIBLE','PACIENTE_EN_ESPERA','MEDICO_EN_ESPERA','EN_ATENCION','FINALIZADA','PACIENTE_AUSENTE','MEDICO_AUSENTE']
 
 class Cancel(Input):
     version: int = Field(gt=0)

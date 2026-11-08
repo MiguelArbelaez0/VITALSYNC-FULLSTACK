@@ -9,7 +9,7 @@ from app.core.config import *
 from app.core.security import current_user, passwords, create_session, digest
 from app.db.session import get_db
 from app.models.entities import *
-from app.schemas.requests import Login, Register, Profile, PaymentInput, Reconcile, HoldInput, Cancel
+from app.schemas.requests import Login, Register, Profile, PaymentInput, Reconcile, HoldInput, Cancel, TeleconsultationStatus
 from app.repositories.queries import *
 from app.services import booking, payments
 
@@ -121,8 +121,9 @@ def specialties(db: Session = Depends(get_db, scope='function')):
     return db.scalars(select(Specialty).order_by(Specialty.id)).all()
 
 @app.get('/api/doctors')
-def doctors(search: str = Query('', max_length=120), specialty_id: int | None = None, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
+def doctors(search: str = Query('', max_length=120), specialty_id: int | None = None, modality: str = Query('PRESENCIAL', pattern='^(PRESENCIAL|VIRTUAL)$'), user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
     q = doctors_query().where(Doctor.enabled)
+    q = q.where(Doctor.modalities.contains([modality]))
     if search:
         q = q.where(Doctor.name.ilike('%' + search.replace('%', '').replace('_', '') + '%'))
     if specialty_id:
@@ -137,20 +138,22 @@ def doctor(doctor_id: int, user=Depends(current_user, scope='function'), db: Ses
     return doctor_dict(*row)
 
 @app.get('/api/doctors/{doctor_id}/availability')
-def availability(doctor_id: int, day: date | None = None, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
+def availability(doctor_id: int, day: date | None = None, modality: str = Query('PRESENCIAL', pattern='^(PRESENCIAL|VIRTUAL)$'), user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
     d = db.get(Doctor, doctor_id)
     if not d or not d.enabled:
         raise HTTPException(404, 'Médico no disponible')
-    q = select(Availability).where(Availability.doctor_id == doctor_id, Availability.published, Availability.starts_at > now())
+    if modality not in d.modalities:
+        return []
+    q = select(Availability).where(Availability.doctor_id == doctor_id, Availability.published, Availability.starts_at > now(), Availability.modalities.contains([modality]))
     if day:
         start = datetime.combine(day, time.min, tzinfo=ZoneInfo('America/Bogota'))
         q = q.where(Availability.starts_at >= start, Availability.starts_at < start + timedelta(days=1))
     slots = db.scalars(q.order_by(Availability.starts_at).limit(500)).all()
-    return [dict(id=s.id, starts_at=s.starts_at, ends_at=s.ends_at, available=booking.available(db, s, user.id)) for s in slots]
+    return [dict(id=s.id, starts_at=s.starts_at, ends_at=s.ends_at, modalities=s.modalities, available=booking.available(db, s, user.id)) for s in slots]
 
 @app.post('/api/holds', status_code=201)
 def hold(data: HoldInput, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
-    return booking.create_hold(db, user, data.availability_id)
+    return booking.create_hold(db, user, data.availability_id, data.modality)
 
 @app.get('/api/holds/{hold_id}')
 def get_hold(hold_id: int, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
@@ -197,8 +200,53 @@ def appointment(appointment_id: int, user=Depends(current_user, scope='function'
         raise HTTPException(404, 'Cita no encontrada')
     result = appointment_dict(*row)
     result['patient'] = user.name
+    result['location'] = 'Sede VITALSYNC Bogotá (ficticia)' if result['modality'] == 'PRESENCIAL' else None
+    if result['modality'] == 'VIRTUAL':
+        vc = db.get(VirtualConsultation, appointment_id)
+        result['virtual_status'] = vc.status if vc else 'PROGRAMADA'
+    else:
+        result['virtual_status'] = None
     result['history'] = db.scalars(select(StatusHistory).where(StatusHistory.appointment_id == appointment_id).order_by(StatusHistory.id)).all()
     return result
+
+VIRTUAL_TRANSITIONS = {
+    'PROGRAMADA': {'SALA_DISPONIBLE'},
+    'SALA_DISPONIBLE': {'PACIENTE_EN_ESPERA', 'PACIENTE_AUSENTE'},
+    'PACIENTE_EN_ESPERA': {'MEDICO_EN_ESPERA', 'MEDICO_AUSENTE'},
+    'MEDICO_EN_ESPERA': {'EN_ATENCION'},
+    'EN_ATENCION': {'FINALIZADA'},
+    'PACIENTE_AUSENTE': set(), 'MEDICO_AUSENTE': set(),
+    'FINALIZADA': set(), 'CANCELADA': set(),
+}
+
+@app.get('/api/appointments/{appointment_id}/teleconsult')
+def virtual_teleconsult(appointment_id: int, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
+    row = db.execute(appointments_query(user.id).where(Appointment.id == appointment_id, Appointment.modality == 'VIRTUAL', Appointment.status == 'CONFIRMED')).first()
+    if not row:
+        raise HTTPException(404, 'Teleconsulta no encontrada o no pertenece a tu cuenta')
+    session = db.get(VirtualConsultation, appointment_id)
+    if not session or session.status == 'CANCELADA':
+        raise HTTPException(404, 'Teleconsulta no disponible')
+    result = appointment_dict(*row)
+    result['patient'] = user.name
+    result['message'] = 'Teleconsulta simulada — sin conexión de audio o video'
+    result['virtual_status'] = session.status
+    return result
+
+@app.post('/api/appointments/{appointment_id}/teleconsult/status')
+def set_virtual_status(appointment_id: int, data: TeleconsultationStatus, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
+    booking.lock_patient(db, user.id)
+    appointment = db.scalar(select(Appointment).where(Appointment.id == appointment_id, Appointment.patient_id == user.id, Appointment.modality == 'VIRTUAL').with_for_update())
+    if not appointment or appointment.status != 'CONFIRMED':
+        raise HTTPException(404, 'Teleconsulta no encontrada o no pertenece a tu cuenta')
+    session = db.get(VirtualConsultation, appointment_id)
+    if not session or data.status not in VIRTUAL_TRANSITIONS.get(session.status, set()):
+        raise HTTPException(409, 'Este estado no corresponde al siguiente paso de la simulación')
+    session.status = data.status
+    session.updated_at = now()
+    db.add(AuditEvent(actor_id=user.id, action='SIMULATED_TELECONSULT_' + data.status, entity_id=appointment_id))
+    db.add(StatusHistory(appointment_id=appointment_id, status='VIRTUAL_' + data.status, author_id=user.id, reason='Cambio de estado de teleconsulta simulada'))
+    return {'appointment_id': appointment_id, 'status': session.status, 'message': 'Estado demostrativo guardado. No hay conexión de audio ni video.'}
 
 @app.post('/api/appointments/{appointment_id}/cancel')
 def cancel(appointment_id: int, data: Cancel, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
