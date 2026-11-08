@@ -1,0 +1,17 @@
+{
+  "result": "PASS",
+  "user_id": 9,
+  "payment_id": 4,
+  "appointment_code": "VS-5E2263402E",
+  "verified": [
+    "sesión HttpOnly",
+    "perfil",
+    "plan activo y vigencia",
+    "pago",
+    "cita confirmada",
+    "historial",
+    "notificaciones"
+  ],
+  "restart": "docker compose restart; volumen conservado",
+  "cancelled_after_restart": true
+}
