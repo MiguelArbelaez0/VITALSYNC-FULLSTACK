@@ -1,14 +1,19 @@
 {
   "result": "PASS",
-  "user_id": 9,
-  "payment_id": 4,
-  "appointment_code": "VS-5E2263402E",
+  "user_id": 26,
+  "payment_id": 63,
+  "appointment_codes": [
+    "VS-774DC13966",
+    "VS-EC44BD0BE9"
+  ],
   "verified": [
     "sesión HttpOnly",
     "perfil",
     "plan activo y vigencia",
     "pago",
-    "cita confirmada",
+    "cita presencial confirmada",
+    "cita virtual confirmada",
+    "estado de sala virtual",
     "historial",
     "notificaciones"
   ],

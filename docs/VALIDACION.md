@@ -7,14 +7,14 @@ Entorno probado: Windows, Docker Desktop con motor Linux, Node 24.14.1, React 19
 | Verificación | Resultado |
 | --- | --- |
 | `npm run build` | TypeScript y compilación Vite correctos |
-| `infrastructure/Test-Backend.ps1` | 40 pruebas Pytest aprobadas sobre PostgreSQL real |
-| `npm test` | 13 pruebas Vitest / React Testing Library aprobadas |
+| `infrastructure/Test-Backend.ps1` | 47 pruebas Pytest aprobadas sobre PostgreSQL real |
+| `npm test` | 15 pruebas Vitest / React Testing Library aprobadas |
 | `npm run test:e2e` | 2 recorridos Playwright aprobados: escritorio e iPhone 13 emulado en Chromium |
 | `python infrastructure/verify_persistence.py` | PASS; reinicio real de frontend, backend y PostgreSQL conservando el volumen |
 | `npm install` / `npm ci` | Auditoría npm sin vulnerabilidades reportadas en las dependencias instaladas |
-| Alembic | `20261108_overlap (head)` aplicado en la base de demostración |
+| Alembic | `20261110_virtual_history (head)` aplicado en la base de demostración; los datos previos se mantienen |
 
-La suite backend usa exclusivamente `vitalsync_test`, creada dentro del contenedor PostgreSQL de VITALSYNC. La BD de demostración no se trunca. Las 40 pruebas pasaron en 38,91 segundos. El resultado de los servicios se registra en el informe de entrega.
+La suite backend usa exclusivamente `vitalsync_test`, creada dentro del contenedor PostgreSQL de VITALSYNC. La BD de demostración no se trunca. Las 47 pruebas pasaron en 49,65 segundos. La base de demostración mantiene citas presenciales y virtuales; la nueva columna conserva el valor `PRESENCIAL` para los registros antiguos. El resultado de los servicios se registra en el informe de entrega.
 
 ## Cobertura backend
 
@@ -33,18 +33,21 @@ La suite backend usa exclusivamente `vitalsync_test`, creada dentro del contened
 - Cancelación propia, conservación de historial, notificación y liberación del horario.
 - Cita ajena, atendida, cancelación repetida, política, versión y falta de confirmación expresa.
 - Cancelación simultánea: una sola actualización e historial/notificación únicos.
+- Filtrado de médicos y turnos por modalidad; cobertura virtual rechazada cuando el plan no la incluye; Estándar/Premium virtual con copago correcto.
+- Conflicto de horario entre una reserva presencial y otra virtual; sala virtual persistida, transiciones secuenciales, acceso solo de la persona propietaria y cancelación.
+- Migración virtual conserva las citas anteriores y crea cobertura/modalidades compatibles.
 - Rollback en confirmación, cancelación y fallo al hacer commit; nunca respuesta de éxito sobre un commit fallido.
 - Seed idempotente, restricciones en la BD y pagos demo deshabilitados fuera de demo.
 
 ## Cobertura frontend
 
-Validación de formularios, login conectado, rutas protegidas, logout que retira la vista, métricas del dashboard, carga/error, directorio y filtros, selección de fecha, retención por API, confirmación sin copago, rechazo del backend sin falso éxito, comprobante, desistimiento, confirmación expresa de cancelación, historial de canceladas y conciliación de pagos pendientes.
+Validación de formularios, login conectado, rutas protegidas, logout que retira la vista, métricas del dashboard, carga/error, directorio y filtros, selección de modalidad, retención por API, confirmación, comprobante y sala virtual con estados traducidos.
 
 Estas pruebas de componente usan respuestas controladas para aislar la interfaz. La persistencia y la integración reales se comprueban con Playwright y PostgreSQL, sin interceptar peticiones.
 
 ## Recorrido web real
 
-En cada tamaño Playwright crea una cuenta nueva, cierra e inicia sesión, intenta reservar sin plan, simula rechazo de pago de plan, genera un pendiente, lo concilia, busca Medicina general, selecciona un horario disponible, retiene, aprueba copago, confirma, revisa y recarga el comprobante, consulta Mis citas, desiste de cancelar, cancela expresamente, consulta Canceladas y comprueba la notificación. También verifica ausencia de desplazamiento horizontal en Notificaciones.
+En cada tamaño Playwright crea una cuenta nueva, cierra e inicia sesión, intenta reservar sin plan, simula rechazo de pago de plan, genera un pendiente y lo concilia; luego agenda presencial, revisa y recarga el comprobante, verifica Mis citas y cancelación, activa Estándar, agenda virtual, abre la teleconsulta simulada, avanza un estado y cancela para liberar el turno de prueba. El recorrido también consulta historial y notificaciones y verifica ausencia de desplazamiento horizontal.
 
 Capturas obtenidas de esos recorridos e inspeccionadas visualmente:
 
@@ -52,13 +55,14 @@ Capturas obtenidas de esos recorridos e inspeccionadas visualmente:
 | --- | --- | --- |
 | Dashboard | [Ver](screenshots/dashboard-desktop.png) | [Ver](screenshots/dashboard-mobile.png) |
 | Comprobante | [Ver](screenshots/receipt-desktop.png) | [Ver](screenshots/receipt-mobile.png) |
+| Sala virtual simulada | [Ver](screenshots/teleconsult-desktop.png) | [Ver](screenshots/teleconsult-mobile.png) |
 | Historial canceladas | [Ver](screenshots/history-desktop.png) | [Ver](screenshots/history-mobile.png) |
 
 La prueba móvil es emulación de dimensiones y entrada táctil de iPhone 13 en Chromium. No se ejecutó Safari ni un iPhone físico.
 
 ## Persistencia tras reiniciar
 
-El script independiente crea una cuenta nueva, aprueba un plan Premium, retiene y confirma una cita y guarda una instantánea de perfil, plan, pagos, cita con historial y notificaciones. Luego ejecuta `docker compose restart`, espera la API y compara todos esos datos utilizando la misma cookie de sesión. La comparación fue idéntica. Finalmente cancela su cita. Evidencia: [persistence-result.json](persistence-result.json).
+El script independiente crea una cuenta nueva, aprueba un plan Premium, confirma una cita presencial y otra virtual, y avanza el estado de la sala virtual. Guarda una instantánea de perfil, plan, pagos, ambas citas, sala, historial y notificaciones. Luego ejecuta `docker compose restart`, espera la API y compara todos esos datos usando la misma cookie. Después cancela ambas citas. Evidencia: [persistence-result.json](persistence-result.json).
 
 ## Incidencias corregidas durante la validación
 

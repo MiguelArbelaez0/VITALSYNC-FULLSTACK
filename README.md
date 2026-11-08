@@ -41,10 +41,12 @@ El seed crea un administrador ficticio (`admin@vitalsync.demo` / `AdminDemo2026!
 - Consultar y actualizar nombre y teléfono del perfil.
 - Ver planes Básico, Estándar y Premium; activar, renovar y cambiar cobertura mediante pago simulado.
 - Buscar médicos por nombre y especialidad; consultar perfil, jornadas y horarios publicados.
+- Elegir atención presencial o virtual antes de buscar disponibilidad; el plan y el servidor validan cobertura y modalidad.
 - Retener un horario durante 10 minutos; el servidor valida médico, agenda, bloqueos, conflictos y cobertura.
 - Pagar copago cuando corresponda, simular rechazo, pendiente o conciliación y resolver el pendiente antes de reintentar.
 - Confirmar transaccionalmente, consultar e imprimir el comprobante desde el navegador.
 - Consultar Mis citas, detalle, historial y canceladas; cancelar con motivo, confirmación expresa y control de versión.
+- Abrir una teleconsulta simulada para ver y cambiar estados de demostración guardados; no se conecta audio ni video.
 - Leer notificaciones guardadas en PostgreSQL.
 
 Las retenciones no son citas. Los pagos pendientes no activan planes ni confirman citas. La cancelación conserva los datos y registra autor, motivo, fecha e historial. Un copago asociado se señala para gestión económica futura; **no se inventa una devolución**.
@@ -113,6 +115,8 @@ El backend ejecuta `alembic upgrade head` al arrancar y luego `python -m app.see
 
 1. `1dd6f0a05515`: entidades, FKs, estados, checks, unicidades e índices.
 2. `20261108_overlap`: extensión `btree_gist` y restricciones de solapamiento.
+3. `20261109_virtual`: modalidades virtual/presencial con registros antiguos conservados como presenciales y cobertura de planes actualizada.
+4. `20261110_virtual_history`: amplía el historial para guardar transiciones de la sala virtual simulada.
 
 Se crean 5 especialidades, 5 médicos, 3 planes, un paciente sin plan y el administrador. Se publican los siguientes 21 días, con 6 turnos diarios por médico, y se registra un bloqueo de demostración a las 11:00 del día siguiente. Todos los turnos duran 30 minutos y tienen autoría administrativa. Las fechas se calculan en `America/Bogota`, se persisten y no se generan aleatoriamente en las consultas. Reiniciar no duplica turnos ni sobrescribe datos existentes.
 
@@ -146,7 +150,7 @@ python infrastructure/verify_persistence.py
 
 Playwright usa React compilado, nginx, FastAPI y PostgreSQL, sin interceptar la API. Ejecuta el mismo recorrido en escritorio y Chromium con dimensiones de iPhone 13. Las cuentas nuevas de E2E quedan como datos ficticios de la demostración. `E2E_BASE_URL` permite cambiar el puerto. Las capturas se guardan en `docs/screenshots` y las trazas fallidas en `frontend/test-results`.
 
-La prueba de persistencia crea su propia cuenta y cita, ejecuta `docker compose restart` sobre **este proyecto**, compara perfil, sesión, plan, pago, cita, historial y notificaciones, y finalmente cancela su cita. No la ejecutes simultáneamente con Playwright porque reinicia los servicios. Resultado en `docs/persistence-result.json`.
+La prueba de persistencia crea su propia cuenta, una cita presencial y otra virtual, ejecuta `docker compose restart` sobre **este proyecto**, compara perfil, sesión, plan, pago, citas, sala virtual, historial y notificaciones, y finalmente cancela las citas. No la ejecutes simultáneamente con Playwright porque reinicia los servicios. Resultado en `docs/persistence-result.json`.
 
 Resultados y alcance comprobados: [VALIDACION.md](docs/VALIDACION.md).
 
@@ -197,7 +201,7 @@ docker compose exec backend python -m app.reset_demo_password paciente@vitalsync
 
 ## Límites y próximos módulos
 
-No se implementaron dashboards de administrador o médico, historia clínica, videollamadas, teleconsulta completa, reprogramación avanzada, devoluciones, correos, push, pagos reales, app nativa ni despliegue público. Las consultas de demostración son presenciales; no hay un botón que anuncie una videollamada disponible. La atención médica y las devoluciones requieren módulos futuros.
+No se implementaron dashboards de administrador o médico, historia clínica, videollamadas, atención médica virtual real, reprogramación avanzada, devoluciones, correos, push, pagos reales, app nativa ni despliegue público. La sala virtual solo demuestra estados guardados en la base de datos; no usa audio ni video, no pide permisos del dispositivo ni genera enlaces. La atención médica y las devoluciones requieren módulos futuros.
 
 El comprobante se imprime con el navegador (puedes elegir Guardar como PDF); no hay un generador de PDF en el servidor. Las notificaciones y pagos listan las últimas 100 operaciones. Las retenciones vencidas dejan de bloquear por su fecha, sin requerir un proceso programado. El seed amplía la agenda al reiniciar; no sustituye un módulo administrativo.
 

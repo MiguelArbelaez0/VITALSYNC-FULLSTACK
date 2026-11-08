@@ -40,6 +40,8 @@ Entra en **Buscar médicos**, ruta `/portal/doctors`. Usa **Buscar por nombre de
 
 Abre **Ver perfil y disponibilidad** de **Dra. Isabella Ríos**. En su perfil, selecciona una **Fecha de consulta** entre las jornadas publicadas. Los horarios aparecen en hora de Bogotá. Los deshabilitados dicen **No disponible**. A las 11:00 del día siguiente hay un bloqueo administrativo de demostración.
 
+Antes de elegir el médico, selecciona **Presencial** o **Virtual** en **¿Qué modalidad de atención necesitas?**. El directorio y los turnos se filtran por esa modalidad. La cobertura del plan también se valida: Básico cubre consultas presenciales; Estándar y Premium cubren ambas modalidades. En la ficha del médico puedes cambiar de modalidad antes de retener el turno. El servidor vuelve a validar la modalidad, el plan y la disponibilidad al crear y confirmar la retención.
+
 Selecciona un turno habilitado y pulsa **Retener horario y continuar**. El servidor verifica plan, cobertura, agenda y conflictos. Si el horario fue tomado por otro paciente, muestra el conflicto y actualiza disponibilidad: cambia de turno, de fecha o vuelve al directorio para elegir otro médico. No se crea una cita ni un pago cuando falla esta validación.
 
 ## 6. Retención temporal
@@ -61,6 +63,14 @@ Con Premium, esta pantalla dice **Tu plan cubre esta consulta** y **No necesitas
 Pulsa **Confirmar cita**. FastAPI revalida la sesión, plan, cobertura, médico, horario, retención y copago. Si algo falla, muestra el motivo y no anuncia un éxito.
 
 Al aprobarse, navega a `/portal/appointments/:id?confirmed=1` y aparece **¡Tu cita está confirmada!**. El comprobante incluye código `VS-…`, paciente, médico, especialidad, fecha, inicio y fin, plan, estado y copago. Usa **Imprimir comprobante** para imprimirlo o guardar PDF desde el navegador.
+
+El comprobante especifica **Presencial** con la sede ficticia, o **Virtual · Teleconsulta simulada** sin mostrar una dirección presencial.
+
+## 8.1 Sala de teleconsulta simulada
+
+En una cita virtual confirmada, pulsa **Ver teleconsulta simulada** desde el comprobante. La sala muestra paciente, médico, especialidad, fecha, hora y el estado guardado en PostgreSQL. **Simular siguiente estado** avanza de forma secuencial por los estados de demostración; cada cambio queda en el historial de la cita. La cuenta debe ser la paciente propietaria de la cita. Una cita virtual se puede cancelar conforme a la misma política horaria y deja de permitir acceso a la sala.
+
+La sala no conecta audio ni video, no pide permisos del dispositivo y no genera enlaces ni atiende consultas médicas reales.
 
 ## 9. Mis citas
 
@@ -104,4 +114,4 @@ El script crea su propia cuenta ficticia, reinicia los tres servicios sin borrar
 
 ## Preparación del día de la presentación
 
-Ejecuta `python -m app.seed` dentro del backend si quieres ampliar jornadas a partir de la fecha actual: `docker compose exec backend python -m app.seed`. Prepara una cuenta nueva si quieres mostrar plan inactivo desde el inicio. No necesitas reiniciar ni borrar la base para repetir la demostración. Deja claro que videollamadas, portales de médico/administrador, correos y pagos reales corresponden a entregas posteriores.
+Ejecuta `python -m app.seed` dentro del backend si quieres ampliar jornadas a partir de la fecha actual: `docker compose exec backend python -m app.seed`. Prepara una cuenta nueva si quieres mostrar plan inactivo desde el inicio. No necesitas reiniciar ni borrar la base para repetir la demostración. La experiencia virtual es simulada; las videollamadas y pagos reales, además de portales de médico/administrador, correos y atención clínica, corresponden a entregas posteriores.

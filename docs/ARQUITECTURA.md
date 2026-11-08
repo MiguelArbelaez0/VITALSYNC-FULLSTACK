@@ -24,6 +24,8 @@ El backend no confía en roles, importes, cobertura, disponibilidad ni confirmac
 | Pago | `APPROVED`, `REJECTED`, `PENDING`, `IN_RECONCILIATION`; dos últimos conciliables a un resultado definitivo |
 | Retención | `ACTIVE`, `CONFIRMED`, `RELEASED`; `ACTIVE` vencida deja de bloquear por `expires_at` |
 | Cita | `CONFIRMED`, `CANCELLED`, `ATTENDED`; la atención es futura, el paciente no puede marcarla |
+| Modalidad | `PRESENCIAL` o `VIRTUAL` en médicos, turnos, retenciones y citas; la migración conserva las citas anteriores como presenciales |
+| Teleconsulta simulada | `PROGRAMADA` → `SALA_DISPONIBLE` → `PACIENTE_EN_ESPERA` → `MEDICO_EN_ESPERA` → `EN_ATENCION` → `FINALIZADA`; también admite los estados terminales `PACIENTE_AUSENTE`, `MEDICO_AUSENTE` y `CANCELADA` |
 
 Un pago rechazado permite una operación nueva con otra clave; un reenvío con la misma clave retorna la original. Un pendiente impide otra operación para el mismo plan o retención. Un copago aprobado impide otro cobro para esa retención. Las repeticiones de confirmación retornan la cita original. Las repeticiones de cancelación se rechazan por versión o estado. El registro no se elimina.
 
@@ -32,7 +34,7 @@ Un pago rechazado permite una operación nueva con otra clave; un reenvío con l
 1. Transacción SQLAlchemy por solicitud.
 2. Bloqueo `FOR UPDATE` del paciente para serializar planes, pagos y reservas propias.
 3. Bloqueo `FOR UPDATE` del médico antes de validar y escribir retenciones, confirmación o cancelación.
-4. Consultas de solapamiento por intervalo `[inicio, fin)` para médico y paciente, bloqueos administrativos, retenciones vigentes y citas confirmadas.
+4. Consultas de solapamiento por intervalo `[inicio, fin)` para médico y paciente, entre ambas modalidades, bloqueos administrativos, retenciones vigentes y citas confirmadas.
 5. Al confirmar se verifica de nuevo la jornada original y el estado habilitado del médico.
 6. Exclusiones GiST de PostgreSQL impiden solapamiento de citas confirmadas por médico y por paciente aun ante escrituras fuera del servicio. Unicidad por retención y por pago asociado evita duplicaciones.
 7. La transacción incluye historial, notificación y auditoría; cualquier error hace rollback.
@@ -57,9 +59,10 @@ Contrato interactivo: `/docs`. JSON completo: `/openapi.json`. Las rutas protegi
 | GET | `/api/my-plan` | Plan y vigencia propios |
 | GET | `/api/specialties` | Especialidades persistidas |
 | GET | `/api/doctors?search=&specialty_id=` | Directorio con filtros |
+| GET | `/api/doctors?modality=PRESENCIAL\|VIRTUAL` | Filtrar médicos por modalidad disponible |
 | GET | `/api/doctors/{id}` | Perfil médico |
-| GET | `/api/doctors/{id}/availability?day=YYYY-MM-DD` | Jornadas futuras, bloqueos y ocupación |
-| POST | `/api/holds` | Retención; cuerpo `availability_id` |
+| GET | `/api/doctors/{id}/availability?day=YYYY-MM-DD&modality=PRESENCIAL\|VIRTUAL` | Jornadas compatibles, bloqueos y ocupación |
+| POST | `/api/holds` | Retención; cuerpo `availability_id` y `modality` |
 | GET | `/api/holds/{id}` | Retención propia |
 | POST | `/api/holds/{id}/release` | Abandonar retención propia |
 | POST | `/api/holds/{id}/confirm` | Confirmación transaccional e idempotente |
@@ -68,6 +71,8 @@ Contrato interactivo: `/docs`. JSON completo: `/openapi.json`. Las rutas protegi
 | POST | `/api/payments/{id}/reconcile` | Resolver pendiente propio; solo demo |
 | GET | `/api/appointments` | Citas propias de todos los estados |
 | GET | `/api/appointments/{id}` | Comprobante e historial propios |
+| GET | `/api/appointments/{id}/teleconsult` | Sala simulada de una cita virtual confirmada y propia |
+| POST | `/api/appointments/{id}/teleconsult/status` | Guardar siguiente estado simulado e historial propio |
 | POST | `/api/appointments/{id}/cancel` | version, reason y confirmed=true |
 | GET | `/api/notifications` | Últimas 100 notificaciones propias |
 | POST | `/api/notifications/{id}/read` | Marcar notificación propia |
@@ -77,6 +82,8 @@ Los endpoints públicos son health, config, planes, especialidades, registro, lo
 ## Errores del dominio
 
 HTTP 401: sesión ausente/vencida o credenciales inválidas. 403: rol/origen no autorizado o demo deshabilitada. 404: recurso inexistente o ajeno. 409: plan inactivo/vencido/sin cobertura, horario bloqueado/ocupado, retención vencida, pago pendiente, cambio de estado o versión, política de cancelación. 422: formulario inválido o falta de confirmación expresa. 503: error de base de datos con rollback. Los mensajes de negocio están en español.
+
+La sala virtual no utiliza audio ni video, no pide permisos del dispositivo, no crea enlaces y no representa atención médica.
 
 ## Alcance de seguridad
 
