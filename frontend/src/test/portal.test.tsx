@@ -99,6 +99,79 @@ describe("Autenticación y acceso", () => {
     expect(screen.getByText("Usa al menos 10 caracteres")).toBeInTheDocument();
     expect(fetch.mock.calls.every((c) => c[0].endsWith("/auth/me"))).toBe(true);
   });
+  it("rechaza formato de cédula inválido en el registro React", async () => {
+    const fetch = mockApi({});
+    wrapper(<Auth register />);
+    await userEvent.type(screen.getByPlaceholderText("Tus nombres"), "Ana Maria");
+    await userEvent.type(screen.getByPlaceholderText("Tus apellidos"), "Torres Ríos");
+    await userEvent.type(screen.getByPlaceholderText("Solo dígitos"), "123 456");
+    await userEvent.type(screen.getByPlaceholderText("tu@correo.com"), "ana@example.com");
+    await userEvent.type(screen.getByPlaceholderText("+57 300 123 4567"), "+57 300 123 4567");
+    await userEvent.type(screen.getByPlaceholderText("Al menos 10 caracteres"), "Password2026!");
+    await userEvent.type(screen.getByPlaceholderText("Escribe nuevamente tu contraseña"), "Password2026!");
+    await userEvent.click(screen.getByRole("checkbox"));
+    await userEvent.click(screen.getByRole("button", { name: "Crear mi cuenta" }));
+    expect(await screen.findByText("Escribe de 6 a 10 dígitos, sin espacios ni puntos")).toBeInTheDocument();
+    expect(fetch.mock.calls.some((call) => call[0] === "/api/auth/register")).toBe(false);
+  });
+  it("valida la fortaleza y coincidencia de las contraseñas", async () => {
+    const fetch = mockApi({});
+    wrapper(<Auth register />);
+    await userEvent.type(screen.getByPlaceholderText("Tus nombres"), "Ana Maria");
+    await userEvent.type(screen.getByPlaceholderText("Tus apellidos"), "Torres Ríos");
+    await userEvent.type(screen.getByPlaceholderText("Solo dígitos"), "12345678");
+    await userEvent.type(screen.getByPlaceholderText("tu@correo.com"), "ana@example.com");
+    await userEvent.type(screen.getByPlaceholderText("+57 300 123 4567"), "+57 300 123 4567");
+    const password = screen.getByPlaceholderText("Al menos 10 caracteres");
+    const confirmation = screen.getByPlaceholderText("Escribe nuevamente tu contraseña");
+    await userEvent.type(password, "lowercasepass1");
+    await userEvent.type(confirmation, "lowercasepass1");
+    await userEvent.click(screen.getByRole("checkbox"));
+    await userEvent.click(screen.getByRole("button", { name: "Crear mi cuenta" }));
+    expect(await screen.findByText("Usa mayúsculas, minúsculas y al menos un número")).toBeInTheDocument();
+    await userEvent.clear(password);
+    await userEvent.type(password, "Password2026!");
+    await userEvent.clear(confirmation);
+    await userEvent.type(confirmation, "Different2026!");
+    await userEvent.click(screen.getByRole("button", { name: "Crear mi cuenta" }));
+    expect(await screen.findByText("Las contraseñas no coinciden")).toBeInTheDocument();
+    expect(fetch.mock.calls.some((call) => call[0] === "/api/auth/register")).toBe(false);
+  });
+  it("crea una cuenta independiente con cédula como texto y privacidad aceptada", async () => {
+    const fetch = mockApi({}, (path) =>
+      path === "/auth/register"
+        ? respond({ ...user, name: "Ana Maria Torres Ríos", has_document: true, document_masked: "••••3456" })
+        : undefined,
+    );
+    wrapper(
+      <Routes>
+        <Route path="/register" element={<Auth register />} />
+        <Route path="/portal" element={<p>Portal abierto</p>} />
+      </Routes>,
+      "/register",
+    );
+    await userEvent.type(screen.getByPlaceholderText("Tus nombres"), "Ana Maria");
+    await userEvent.type(screen.getByPlaceholderText("Tus apellidos"), "Torres Ríos");
+    await userEvent.type(screen.getByPlaceholderText("Solo dígitos"), "00123456");
+    await userEvent.type(screen.getByPlaceholderText("tu@correo.com"), "Ana@Example.com");
+    await userEvent.type(screen.getByPlaceholderText("+57 300 123 4567"), "+57 300 123 4567");
+    await userEvent.type(screen.getByPlaceholderText("Al menos 10 caracteres"), "Password2026!");
+    await userEvent.type(screen.getByPlaceholderText("Escribe nuevamente tu contraseña"), "Password2026!");
+    await userEvent.click(screen.getByRole("checkbox"));
+    await userEvent.click(screen.getByRole("button", { name: "Crear mi cuenta" }));
+    expect(await screen.findByText("Portal abierto")).toBeInTheDocument();
+    const [, request] = fetch.mock.calls.find((call) => call[0] === "/api/auth/register")!;
+    const body = JSON.parse(String(request?.body));
+    expect(body).toMatchObject({
+      given_names: "Ana Maria",
+      surnames: "Torres Ríos",
+      document_type: "CC",
+      document_number: "00123456",
+      privacy_accepted: true,
+    });
+    expect(body.role).toBeUndefined();
+    expect(body.confirm_password).toBeUndefined();
+  });
   it("envía login y navega al portal", async () => {
     const fetch = mockApi({}, (path) =>
       path === "/auth/login" ? respond(user) : undefined,

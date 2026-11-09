@@ -1584,6 +1584,14 @@ dd {
 .profile-panel form {
   max-width: 470px;
 }
+.profile-document {
+  max-width: 470px;
+  margin: 18px 0;
+}
+.profile-document small {
+  display: inline-block;
+  margin-top: 7px;
+}
 .auth-page {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1683,6 +1691,28 @@ dd {
 .form-content form {
   margin-top: 30px;
 }
+.registration-form label {
+  margin-bottom: 13px;
+}
+.auth-field-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: 14px;
+}
+.auth-field-grid label {min-width: 0}
+.required-mark {color: #167784;font-weight: 750}
+.field-hint {display:block;margin-top:6px;color:#567583;font-size:11px;font-weight:400;line-height:1.5}
+.registration-form .field-error,.profile-panel .field-error {color:#365763}
+.password-field {position:relative;display:block}
+.auth-password-control {margin-top:-12px;margin-bottom:13px}
+.password-field input {padding-right:50px}
+.password-toggle {position:absolute;top:9px;right:7px;display:inline-flex;align-items:center;justify-content:center;min-width:34px;min-height:34px;padding:6px;border:0;border-radius:7px;background:transparent;color:#245765}
+.password-toggle:hover {background:#e8f5f5}
+.privacy-notice {margin:2px 0 18px;padding:14px;border:1px solid #d7e8e9;border-radius:10px;background:#f1f7f9;color:#365763;font-size:12px}
+.privacy-notice p {margin:5px 0 12px;color:#486775;font-size:11px;line-height:1.65}
+.consent-field {display:flex;align-items:flex-start;gap:10px;margin:0;color:#365763;font-size:11px;font-weight:500;line-height:1.55}
+.consent-field input[type="checkbox"] {flex:0 0 18px;width:18px;min-height:18px;height:18px;margin:1px 0 0;accent-color:#127784}
+.privacy-notice > .field-error {margin-top:8px}
 .auth-switch {
   margin-top: 23px;
   text-align: center;
@@ -2063,6 +2093,8 @@ dd {
   }
 }
 @media (max-width: 760px) {
+  .auth-field-grid {grid-template-columns:1fr;gap:0}
+  .form-content {padding:30px 0}
   .modality-picker {padding:18px 14px}
   .modality-options {grid-template-columns:1fr}
   .mobile-only {

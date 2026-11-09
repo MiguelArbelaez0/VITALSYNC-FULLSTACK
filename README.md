@@ -36,9 +36,9 @@ El seed crea un administrador ficticio (`admin@vitalsync.demo` / `AdminDemo2026!
 
 ## Qué puedes hacer
 
-- Landing, registro exclusivo de pacientes, login, logout, sesión persistente y rutas protegidas.
+- Landing, registro público e independiente exclusivo de pacientes, login por correo y contraseña, logout, sesión persistente y rutas protegidas.
 - Dashboard con plan, vencimiento, próxima cita, conteo de próximas y notificaciones reales.
-- Consultar y actualizar nombre y teléfono del perfil.
+- Consultar y actualizar nombre y teléfono del perfil; las cuentas históricas pueden añadir una cédula desde Mi perfil.
 - Ver planes Básico, Estándar y Premium; activar, renovar, cambiar cobertura y cancelar el plan activo mediante pago simulado y una acción común para cualquier identificador de plan.
 - Buscar médicos por nombre y especialidad; consultar perfil, jornadas y horarios publicados.
 - Elegir primero teleconsulta virtual simulada (recomendada) o atención presencial; el directorio muestra todas las modalidades de cada médico y filtra profesionales y turnos según la opción elegida.
@@ -83,6 +83,16 @@ docs/                     guía, arquitectura, validación y capturas reales
 
 React se comunica por `/api` con nginx (o el proxy Vite). FastAPI concentra permisos y negocio. La base es la única fuente de datos; no hay médicos, citas o métricas simulados en arreglos del frontend. Los perfiles del seed sí son ficticios, guardados en PostgreSQL.
 
+## Registro, documento y privacidad
+
+En **Crear mi cuenta**, cada paciente registra nombres, apellidos, cédula de ciudadanía (CC), correo, teléfono y contraseña. Debe aceptar sin premarcar el aviso de privacidad para continuar. El backend asigna el rol `PATIENT`; la API no admite seleccionar roles. Después del alta se inicia sesión con cookie HttpOnly y cada cuenta tiene su propio perfil, plan, reservas, pagos y notificaciones.
+
+La cédula se conserva como texto para mantener ceros iniciales. La validación de demostración exige entre 6 y 10 dígitos, sin puntos ni espacios. Es una regla de formato: VITALSYNC no comprueba identidad ni consulta a la Registraduría. PostgreSQL garantiza que no se repita un documento CC. Los errores de documento/correo duplicado son genéricos para no ofrecer una búsqueda pública de personas.
+
+Los números completos de documento no se devuelven desde el perfil: solo se muestra el tipo y los últimos cuatro dígitos. Los usuarios existentes conservan su cuenta sin documento y pueden completarlo desde **Mi perfil** después de aceptar el aviso. Los campos documentales y el consentimiento de usuarios históricos permanecen nullable; no se crean identidades ficticias ni se cambia una contraseña durante la migración. No introduzcas cédulas reales en la demostración.
+
+El aviso registra la versión `VITALSYNC-PRIVACIDAD-2026-11-v1` y la fecha de aceptación. Informa que nombre, cédula, correo y teléfono se utilizan para crear y proteger la cuenta, gestionar el plan y coordinar la atención solicitada. Es una explicación funcional para esta demostración y no una certificación legal.
+
 ## Concurrencia, transacciones y seguridad
 
 Las operaciones críticas bloquean primero la fila del paciente y después la del médico con `SELECT FOR UPDATE`. La segunda transacción espera y vuelve a consultar conflictos antes de escribir. Se comprueban solapamientos, incluyendo horarios parcialmente superpuestos y citas del propio paciente con otro médico. La base además tiene exclusiones GiST para intervalos confirmados de médico y paciente y unicidad por retención.
@@ -118,6 +128,7 @@ El backend ejecuta `alembic upgrade head` al arrancar y luego `python -m app.see
 2. `20261108_overlap`: extensión `btree_gist` y restricciones de solapamiento.
 3. `20261109_virtual`: modalidades virtual/presencial con registros antiguos conservados como presenciales y cobertura de planes actualizada.
 4. `20261110_virtual_history`: amplía el historial para guardar transiciones de la sala virtual simulada.
+5. `20261114_patient_identity`: añade estado y fecha de creación de cuentas, aceptación versionada del aviso y documento nullable con formato y unicidad para CC. Las cuentas anteriores conservan sus valores nulos.
 
 Se crean 5 especialidades, 5 médicos, 3 planes, un paciente sin plan y el administrador. Se publican los siguientes 21 días, con 6 turnos diarios por médico, y se registra un bloqueo de demostración a las 11:00 del día siguiente. Todos los turnos duran 30 minutos y tienen autoría administrativa. Las fechas se calculan en `America/Bogota`, se persisten y no se generan aleatoriamente en las consultas. Reiniciar no duplica turnos ni sobrescribe datos existentes.
 

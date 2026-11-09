@@ -11,21 +11,159 @@ from app.models.entities import *
 from app.core.security import digest, passwords
 from app.services import booking
 from app.seed import seed
-from conftest import activate, free_slot, hold, copay, appointment
+from conftest import activate, free_slot, hold, copay, appointment, registration_data, register_patient
 
 def test_register_duplicate_and_role_injection(client):
-    body = {'name':'Paciente Nuevo','email':'nuevo@example.com','password':'Password2026!'}
+    body = registration_data('Paciente Nuevo', 'nuevo@example.com', 'Password2026!', '123456')
     assert client.post('/api/auth/register',json=body|{'role':'ADMIN'}).status_code == 422
     r = client.post('/api/auth/register',json=body)
     assert r.status_code == 201
     assert r.json()['role'] == 'PATIENT'
+    assert r.json()['document_type'] == 'CC' and r.json()['document_masked'] == '••3456'
+    assert r.json()['has_document'] is True
+    assert r.json()['privacy_notice_version'] and r.json()['privacy_accepted_at']
     cookie = r.headers['set-cookie'].lower()
     assert 'httponly' in cookie and 'samesite=strict' in cookie
     assert client.get('/api/auth/me').json()['name'] == 'Paciente Nuevo'
-    assert client.post('/api/auth/register',json=body).status_code == 409
+    duplicate_email = client.post('/api/auth/register',json=body|{'email':'NUEVO@example.com','document_number':'654321'})
+    assert duplicate_email.status_code == 409
+    duplicate_document = register_patient(client, 'Otra Paciente', 'otra@example.com', 'Password2026!', '123456')
+    assert duplicate_document.status_code == 409
+    assert duplicate_document.json() == duplicate_email.json()
     with SessionLocal() as db:
         u = db.scalar(select(User).where(User.email == body['email']))
         assert u.password_hash != body['password'] and passwords.verify(body['password'], u.password_hash)
+
+@pytest.mark.parametrize('document', ['12345', '12345678901', '123 456', '123.456', '12A456', ''])
+def test_registration_rejects_invalid_document_without_echoing_it(client, document):
+    body = registration_data('Paciente Prueba', 'identity-format@example.com', 'Password2026!', document)
+    response = client.post('/api/auth/register', json=body)
+    assert response.status_code == 422
+    assert b'"input"' not in response.content
+
+def test_registration_requires_phone_and_privacy_consent(client):
+    body = registration_data('Paciente Prueba', 'identity-consent@example.com', 'Password2026!')
+    assert client.post('/api/auth/register', json=body | {'privacy_accepted': False}).status_code == 422
+    assert client.post('/api/auth/register', json={key: value for key, value in body.items() if key != 'phone'}).status_code == 422
+
+@pytest.mark.parametrize('password', ['short7!', 'lowercasepass1', 'UPPERCASEPASS1'])
+def test_registration_rejects_insufficient_passwords(client, password):
+    body = registration_data('Paciente Seguridad', 'password-policy@example.com', password)
+    assert client.post('/api/auth/register', json=body).status_code == 422
+
+def test_database_keeps_identity_nullable_for_historical_patients(patient):
+    with SessionLocal() as db:
+        columns = {row.column_name: row.is_nullable for row in db.execute(text("""
+            SELECT column_name, is_nullable FROM information_schema.columns
+            WHERE table_name = 'patients' AND column_name IN ('document_type','document_number')
+        """))}
+        legacy_id = patient.get('/api/auth/me').json()['id']
+        legacy = db.get(Patient, legacy_id)
+        assert columns == {'document_type': 'YES', 'document_number': 'YES'}
+        assert legacy.document_type is None and legacy.document_number is None
+
+def test_same_document_race_creates_at_most_one_patient():
+    document = '34567890'
+    def create(index):
+        with TestClient(app) as client:
+            return register_patient(client, f'Paciente Numero {index}', f'document-race-{index}@example.com', 'Password2026!', document).status_code
+    with ThreadPoolExecutor(2) as pool:
+        statuses = list(pool.map(create, [1, 2]))
+    assert sorted(statuses) == [201, 409]
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(Patient).where(Patient.document_number == document)) == 1
+
+def test_two_self_registered_patients_have_independent_profiles_plans_and_appointments():
+    with TestClient(app) as first, TestClient(app) as second:
+        a = register_patient(first, 'Ana Maria', 'Ana.Patient@Example.com', 'Password2026!', '123456')
+        b = register_patient(second, 'Bruno Lopez', 'bruno.patient@example.com', 'Password2026!', '0001234567')
+        assert a.status_code == b.status_code == 201
+        assert a.json()['id'] != b.json()['id']
+        assert a.json()['email'] == 'ana.patient@example.com'
+        assert a.json()['document_masked'] == '••3456'
+        assert b.json()['document_masked'] == '••••••4567'
+        assert '123456' not in a.text and '0001234567' not in b.text
+        assert first.get('/api/auth/me').json()['name'] == 'Ana Maria'
+        assert second.get('/api/auth/me').json()['name'] == 'Bruno Lopez'
+        assert first.get('/api/my-plan').json()['status'] == 'INACTIVE'
+        assert second.get('/api/my-plan').json()['status'] == 'INACTIVE'
+
+        activate(first, 'Estándar')
+        appointment(first, 'Estándar')
+        assert first.get('/api/my-plan').json()['status'] == 'ACTIVE'
+        assert len(first.get('/api/appointments').json()) == 1
+        assert second.get('/api/my-plan').json()['status'] == 'INACTIVE'
+        assert second.get('/api/appointments').json() == []
+        assert len(first.get('/api/notifications').json()) > len(second.get('/api/notifications').json())
+
+def test_legacy_patient_can_add_document_without_changing_login_or_exposing_full_value(patient):
+    before = patient.get('/api/auth/me').json()
+    assert before['has_document'] is False and before['document_masked'] is None
+    response = patient.patch('/api/auth/me', json={
+        'name': before['name'],
+        'phone': '+57 300 123 4567',
+        'document_type': 'CC',
+        'document_number': '00123456',
+        'privacy_accepted': True,
+    })
+    assert response.status_code == 200, response.text
+    assert response.json()['document_masked'] == '••••3456'
+    assert '00123456' not in response.text
+    with SessionLocal() as db:
+        patient_record = db.get(Patient, before['id'])
+        user = db.get(User, before['id'])
+        assert patient_record.document_number == '00123456'
+        assert user.privacy_notice_version and user.privacy_accepted_at
+        assert db.scalar(select(func.count()).select_from(AuditEvent).where(
+            AuditEvent.actor_id == before['id'], AuditEvent.action == 'PATIENT_PROFILE_UPDATED'
+        )) == 1
+    assert patient.get('/api/auth/me').status_code == 200
+
+def test_document_conflict_is_generic_and_existing_document_cannot_be_replaced(patient):
+    with TestClient(app) as other:
+        register_patient(other, 'Otra Persona', 'document-owner@example.com', 'Password2026!', '12345678')
+    duplicate = patient.patch('/api/auth/me', json={
+        'name': 'Valentina Torres', 'phone': '', 'document_type': 'CC',
+        'document_number': '12345678', 'privacy_accepted': True,
+    })
+    assert duplicate.status_code == 409
+    assert 'No pudimos guardar este documento' in duplicate.json()['detail']
+    assert '12345678' not in duplicate.text
+    with TestClient(app) as owner:
+        register_patient(owner, 'Dueña del Documento', 'document-owner-two@example.com', 'Password2026!', '87654321')
+        changed = owner.patch('/api/auth/me', json={
+            'name': 'Dueña del Documento', 'phone': '', 'document_type': 'CC',
+            'document_number': '11223344', 'privacy_accepted': True,
+        })
+        assert changed.status_code == 409
+        assert '11223344' not in changed.text
+
+def test_profile_rejects_document_without_consent_and_keeps_legacy_login(patient):
+    before = patient.get('/api/auth/me').json()
+    assert before['has_document'] is False
+    rejected = patient.patch('/api/auth/me', json={
+        'name': before['name'], 'phone': '', 'document_type': 'CC',
+        'document_number': '76543210', 'privacy_accepted': False,
+    })
+    assert rejected.status_code == 422
+    assert '76543210' not in rejected.text
+    assert patient.get('/api/auth/me').status_code == 200
+    assert patient.get('/api/auth/me').json()['has_document'] is False
+
+def test_registration_rolls_back_all_records_if_commit_fails(monkeypatch):
+    from sqlalchemy.orm import Session
+    body = registration_data('Rollback Patient', 'rollback-registration@example.com', 'Password2026!', '98765432')
+    def broken_commit(self):
+        raise OperationalError('injected commit failure', {}, Exception('test'))
+    with monkeypatch.context() as patcher:
+        patcher.setattr(Session, 'commit', broken_commit)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.post('/api/auth/register', json=body)
+            assert response.status_code == 503
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(User).where(User.email == body['email'])) == 0
+        assert db.scalar(select(func.count()).select_from(Patient).where(Patient.document_number == '98765432')) == 0
+        assert db.scalar(select(func.count()).select_from(Notification).join(Patient, Notification.patient_id == Patient.id).join(User, User.id == Patient.id).where(User.email == body['email'])) == 0
 
 def test_login_logout_and_session_persistence(patient):
     token = patient.cookies.get('vitalsync_session')
@@ -37,6 +175,13 @@ def test_login_logout_and_session_persistence(patient):
     with TestClient(app) as another:
         another.cookies.set('vitalsync_session', token)
         assert another.get('/api/auth/me').status_code == 401
+
+def test_disabled_account_cannot_reuse_an_existing_session(patient):
+    uid = patient.get('/api/auth/me').json()['id']
+    with SessionLocal.begin() as db:
+        db.get(User, uid).status = 'DISABLED'
+    assert patient.get('/api/auth/me').status_code == 401
+    assert patient.post('/api/auth/login', json={'email':'paciente@vitalsync.demo','password':'Paciente2026!'}).status_code == 403
 
 @pytest.mark.parametrize('email,password', [('paciente@vitalsync.demo','Incorrecta123!'),('missing@example.com','Incorrecta123!')])
 def test_invalid_login(client,email,password):
@@ -136,7 +281,7 @@ def test_plan_cancellation_requires_ownership_and_explicit_confirmation(patient)
     activate(patient,'Estándar')
     plan_id=patient.get('/api/my-plan').json()['plan']['id']
     with TestClient(app) as other:
-        other.post('/api/auth/register',json={'name':'Otro Paciente','email':'cancel-plan-owner@example.com','password':'Paciente2026!'})
+        register_patient(other,'Otro Paciente','cancel-plan-owner@example.com','Paciente2026!')
         assert other.post('/api/my-plan/cancel',json={'plan_id':plan_id,'confirmed':True}).status_code==404
     assert patient.post('/api/my-plan/cancel',json={'plan_id':plan_id,'confirmed':False}).status_code==422
     assert patient.post('/api/my-plan/cancel',json={'plan_id':plan_id}).status_code==422
@@ -242,7 +387,7 @@ def test_confirmation_revalidates(patient,change):
 def test_concurrent_holds_and_confirmations(patient):
     activate(patient,'Premium')
     with TestClient(app) as second:
-        assert second.post('/api/auth/register',json={'name':'Otro Paciente','email':'otro@example.com','password':'Password2026!'}).status_code==201
+        assert register_patient(second,'Otro Paciente','otro@example.com','Password2026!').status_code==201
         activate(second,'Premium')
         slot=free_slot(patient)
         def reserve(c): return c.post('/api/holds',json={'availability_id':slot['id']})
@@ -284,7 +429,7 @@ def test_cancel_own_history_notification_release_once(patient):
 def test_other_patient_denied(patient):
     a=appointment(patient)
     with TestClient(app) as other:
-        other.post('/api/auth/register',json={'name':'Otro Paciente','email':'otro@example.com','password':'Password2026!'})
+        register_patient(other,'Otro Paciente','otro@example.com','Password2026!')
         assert other.get(f"/api/appointments/{a['id']}").status_code==404
         assert other.post(f"/api/appointments/{a['id']}/cancel",json={'version':1,'reason':'Ajena','confirmed':True}).status_code==404
         with SessionLocal() as db:
@@ -485,7 +630,7 @@ def test_standard_plan_virtual_copay_confirmation_and_receipt(patient):
 def test_virtual_same_slot_conflicts_with_in_person_booking(patient):
     current=appointment(patient,'Premium')
     with TestClient(app) as other:
-        other.post('/api/auth/register',json={'name':'Paciente Virtual','email':'virtual-conflict@example.com','password':'Paciente2026!'})
+        register_patient(other,'Paciente Virtual','virtual-conflict@example.com','Paciente2026!')
         activate(other,'Premium')
         with SessionLocal.begin() as db:
             original=db.get(Appointment,current['id'])
@@ -505,7 +650,7 @@ def test_virtual_room_state_transitions_and_access_control(patient):
         assert r.status_code==200 and r.json()['status']==step
     assert patient.post(f'/api/appointments/{aid}/teleconsult/status',json={'status':'EN_ATENCION'}).status_code==409
     with TestClient(app) as other:
-        other.post('/api/auth/register',json={'name':'Otro Paciente','email':'teleconsult-denied@example.com','password':'Paciente2026!'})
+        register_patient(other,'Otro Paciente','teleconsult-denied@example.com','Paciente2026!')
         assert other.get(f'/api/appointments/{aid}/teleconsult').status_code==404
         assert other.post(f'/api/appointments/{aid}/teleconsult/status',json={'status':'SALA_DISPONIBLE'}).status_code==404
     data={'version':1,'reason':'El paciente cancela su cita virtual','confirmed':True}

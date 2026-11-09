@@ -24,6 +24,8 @@ def current_user(request: Request, db: Session = Depends(get_db, scope='function
     if not session or session.expires_at <= now():
         raise HTTPException(401, 'Tu sesión ha vencido. Inicia sesión para continuar')
     user = db.get(User, session.user_id)
+    if not user or user.status != 'ACTIVE':
+        raise HTTPException(401, 'Tu sesión no está disponible. Inicia sesión nuevamente')
     if user.role != 'PATIENT':
         raise HTTPException(403, 'Esta operación requiere el rol de paciente')
     return user

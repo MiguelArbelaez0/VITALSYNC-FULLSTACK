@@ -23,10 +23,16 @@ test("Paciente real: registro, login, plan, copago, cita y cancelación", async 
 }, testInfo) => {
   const email = `e2e-${testInfo.project.name}-${Date.now()}@example.com`;
   await page.goto("/register");
-  await page.getByLabel("Nombre completo").fill("Paciente E2E");
+  await page.getByPlaceholder("Tus nombres").fill("Paciente");
+  await page.getByPlaceholder("Tus apellidos").fill("Proyecto E2E");
+  await page.getByPlaceholder("Solo dígitos").fill(String(Date.now()).slice(-9));
   await page.getByLabel("Correo electrónico").fill(email);
-  await page.getByLabel("Contraseña").fill("PacienteE2E2026!");
+  await page.getByPlaceholder("+57 300 123 4567").fill("+57 300 123 4567");
+  await page.getByPlaceholder("Al menos 10 caracteres").fill("PacienteE2E2026!");
+  await page.getByPlaceholder("Escribe nuevamente tu contraseña").fill("PacienteE2E2026!");
+  await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Crear mi cuenta" }).click();
+  await expect(page.getByRole("status")).toContainText("Tu cuenta de paciente fue creada correctamente");
   await expect(
     page.getByRole("heading", { name: "Hola, Paciente 👋" }),
   ).toBeVisible();
@@ -34,7 +40,7 @@ test("Paciente real: registro, login, plan, copago, cita y cancelación", async 
     await page.getByRole("button", { name: "Abrir menú" }).click();
   await page.getByRole("button", { name: "Cerrar sesión" }).click();
   await page.getByLabel("Correo electrónico").fill(email);
-  await page.getByLabel("Contraseña").fill("PacienteE2E2026!");
+  await page.getByPlaceholder("Tu contraseña").fill("PacienteE2E2026!");
   await page.getByRole("button", { name: "Iniciar sesión" }).click();
   await expect(
     page.getByRole("heading", { name: "Hola, Paciente 👋" }),
@@ -76,7 +82,7 @@ test("Paciente real: registro, login, plan, copago, cita y cancelación", async 
   await page.goto("/portal/doctors?modality=VIRTUAL");
   await page.getByRole("link", { name: "Ver perfil y disponibilidad" }).first().click();
   await expect(page.getByText(/Tu plan actual no incluye consultas virtuales/)).toBeVisible();
-  await page.locator(".time-slot:not([disabled])").first().click();
+  await expect(page.locator(".time-slot:not([disabled])")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Retener horario y continuar" })).toBeDisabled();
   await page.goto("/portal/plans");
   await page

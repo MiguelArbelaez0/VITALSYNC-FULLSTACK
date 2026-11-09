@@ -8,7 +8,7 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { api, dateText, timeText } from "../../services/api";
 import type { DashboardData } from "../../types";
 import {
@@ -20,6 +20,7 @@ import {
   PageTitle,
 } from "../../components/common";
 export function Dashboard() {
+  const location = useLocation();
   const q = useQuery({
     queryKey: ["dashboard"],
     queryFn: () => api<DashboardData>("/dashboard"),
@@ -27,8 +28,16 @@ export function Dashboard() {
   if (q.isPending) return <Loading />;
   if (q.error) return <ErrorBox error={q.error} />;
   const d = q.data;
+  const registrationComplete = Boolean(
+    (location.state as { registrationComplete?: boolean } | null)?.registrationComplete,
+  );
   return (
     <>
+      {registrationComplete && (
+        <div className="alert success registration-success" role="status">
+          Tu cuenta de paciente fue creada correctamente. Ya puedes gestionar tu plan y tus citas desde este espacio personal.
+        </div>
+      )}
       <PageTitle
         eyebrow="UN BUEN DÍA PARA CUIDARTE"
         title={`Hola, ${d.name.split(" ")[0]} 👋`}

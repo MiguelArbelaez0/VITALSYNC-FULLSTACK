@@ -4,6 +4,13 @@ export interface User {
   email: string;
   phone: string;
   role: string;
+  document_type?: string | null;
+  document_masked?: string | null;
+  has_document?: boolean;
+  account_status?: string;
+  registered_at?: string;
+  privacy_notice_version?: string | null;
+  privacy_accepted_at?: string | null;
 }
 export interface Plan {
   id: number;

@@ -36,6 +36,27 @@ def patient(client):
     assert r.status_code == 200, r.text
     return client
 
+def registration_data(name, email, password, document_number=None, **overrides):
+    parts = name.strip().split(maxsplit=1)
+    document = document_number if document_number is not None else str(uuid4().int % 10_000_000_000).zfill(10)
+    return {
+        'given_names': parts[0],
+        'surnames': parts[1] if len(parts) > 1 else 'Paciente',
+        'document_type': 'CC',
+        'document_number': document,
+        'email': email,
+        'phone': '+57 300 123 4567',
+        'password': password,
+        'privacy_accepted': True,
+        **overrides,
+    }
+
+def register_patient(client, name, email, password, document_number=None, **overrides):
+    return client.post(
+        '/api/auth/register',
+        json=registration_data(name, email, password, document_number, **overrides),
+    )
+
 def activate(c, plan_name='Básico', status='APPROVED'):
     plan = next(p for p in c.get('/api/plans').json() if p['name'] == plan_name)
     r = c.post('/api/payments', json={'kind':'PLAN','target_id':plan['id'],'status':status,'idempotency_key':uuid4().hex})

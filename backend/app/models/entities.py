@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint, CheckConstraint, Index
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint, CheckConstraint, Index, func
 from sqlalchemy.dialects.postgresql import JSONB
 from app.db.session import Base
 
@@ -13,12 +13,29 @@ class User(Base):
     name = Column(String(120), nullable=False)
     password_hash = Column(Text, nullable=False)
     role = Column(String(16), nullable=False, default='PATIENT')
-    __table_args__ = (CheckConstraint("role IN ('PATIENT','ADMIN','DOCTOR')"),)
+    status = Column(String(16), nullable=False, default='ACTIVE', server_default='ACTIVE')
+    created_at = Column(DateTime(timezone=True), nullable=False, default=now, server_default=func.now())
+    privacy_notice_version = Column(String(40))
+    privacy_accepted_at = Column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint("role IN ('PATIENT','ADMIN','DOCTOR')"),
+        CheckConstraint("status IN ('ACTIVE','DISABLED')", name='ck_users_account_status'),
+    )
 
 class Patient(Base):
     __tablename__ = 'patients'
     id = Column(Integer, ForeignKey('users.id'), primary_key=True)
     phone = Column(String(30), default='', nullable=False)
+    document_type = Column(String(2))
+    document_number = Column(String(10))
+    __table_args__ = (
+        UniqueConstraint('document_type', 'document_number', name='uq_patients_document'),
+        CheckConstraint(
+            "(document_type IS NULL AND document_number IS NULL) OR "
+            "(document_type = 'CC' AND document_number ~ '^[0-9]{6,10}$')",
+            name='ck_patients_document_format',
+        ),
+    )
 
 class SessionToken(Base):
     __tablename__ = 'sessions'

@@ -1,8 +1,9 @@
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 from fastapi import FastAPI, Depends, HTTPException, Request, Response, Query
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from app.core.config import *
@@ -14,6 +15,7 @@ from app.repositories.queries import *
 from app.services import booking, payments, plans as plan_services
 
 app = FastAPI(title='VITALSYNC · Portal del paciente', version='1.0.0')
+PRIVACY_NOTICE_VERSION = 'VITALSYNC-PRIVACIDAD-2026-11-v1'
 
 @app.middleware('http')
 async def browser_security(request: Request, call_next):
@@ -31,10 +33,19 @@ async def browser_security(request: Request, call_next):
 async def conflict(request, exc):
     return JSONResponse(status_code=409, content={'detail': 'La operación entra en conflicto con datos existentes. Actualiza e inténtalo de nuevo'})
 
+@app.exception_handler(RequestValidationError)
+async def validation_error(request, exc):
+    # Pydantic's default response includes submitted values; never echo identity data.
+    details = [
+        {'loc': error.get('loc', ()), 'msg': error.get('msg', 'Dato inválido'), 'type': error.get('type', 'value_error')}
+        for error in exc.errors()
+    ]
+    return JSONResponse(status_code=422, content={'detail': details})
+
 @app.exception_handler(SQLAlchemyError)
 async def database_error(request, exc):
     import logging
-    logging.getLogger('vitalsync').exception('Error transaccional', exc_info=exc)
+    logging.getLogger('vitalsync').error('Error transaccional (%s)', type(exc).__name__)
     return JSONResponse(status_code=503, content={'detail': 'No pudimos guardar la operación. Los cambios se revirtieron; vuelve a intentarlo'})
 
 @app.get('/api/health')
@@ -48,31 +59,66 @@ def config():
 
 def profile_dict(db, u):
     p = db.get(Patient, u.id)
-    return dict(id=u.id, name=u.name, email=u.email, role=u.role, phone=p.phone if p else '')
+    number = p.document_number if p else None
+    return dict(
+        id=u.id,
+        name=u.name,
+        email=u.email,
+        role=u.role,
+        phone=p.phone if p else '',
+        document_type=p.document_type if p else None,
+        document_masked=('•' * max(0, len(number) - 4) + number[-4:]) if number else None,
+        has_document=bool(number),
+        account_status=u.status,
+        registered_at=u.created_at,
+        privacy_notice_version=u.privacy_notice_version,
+        privacy_accepted_at=u.privacy_accepted_at,
+    )
 
 @app.post('/api/auth/register', status_code=201)
 def register(data: Register, response: Response, db: Session = Depends(get_db, scope='function')):
     email = data.email.lower()
-    if db.scalar(select(User.id).where(User.email == email)):
-        raise HTTPException(409, 'Este correo ya está registrado')
-    user = User(email=email, name=data.name, password_hash=passwords.hash(data.password), role='PATIENT')
+    if db.scalar(select(User.id).where(func.lower(User.email) == email)) or db.scalar(
+        select(Patient.id).where(
+            Patient.document_type == data.document_type,
+            Patient.document_number == data.document_number,
+        )
+    ):
+        raise HTTPException(409, 'No pudimos crear la cuenta con esos datos. Si ya tienes cuenta, inicia sesión.')
+    user = User(
+        email=email,
+        name=f'{data.given_names} {data.surnames}',
+        password_hash=passwords.hash(data.password),
+        role='PATIENT',
+        status='ACTIVE',
+        privacy_notice_version=PRIVACY_NOTICE_VERSION,
+        privacy_accepted_at=now(),
+    )
     db.add(user)
     db.flush()
-    db.add(Patient(id=user.id))
+    db.add(Patient(
+        id=user.id,
+        phone=data.phone,
+        document_type=data.document_type,
+        document_number=data.document_number,
+    ))
     db.flush()
     create_session(db, user, response)
+    db.add(AuditEvent(actor_id=user.id, action='PATIENT_REGISTERED', entity_id=user.id))
     booking.notify(db, user.id, 'Te damos la bienvenida a VITALSYNC. Activa tu plan para comenzar.')
     return profile_dict(db, user)
 
 @app.post('/api/auth/login')
 def login(data: Login, response: Response, db: Session = Depends(get_db, scope='function')):
-    user = db.scalar(select(User).where(User.email == data.email.lower()))
+    user = db.scalar(select(User).where(func.lower(User.email) == data.email.lower()))
     # Derivación también para correos inexistentes, sin revelar si una cuenta existe.
     valid = passwords.verify(data.password, user.password_hash if user else DUMMY_HASH)
     if not user or not valid:
         raise HTTPException(401, 'Correo o contraseña incorrectos')
     if user.role != 'PATIENT':
         raise HTTPException(403, 'Este portal es exclusivo para pacientes')
+    if user.status != 'ACTIVE':
+        raise HTTPException(403, 'Esta cuenta no está disponible. Contacta al equipo de VITALSYNC.')
     create_session(db, user, response)
     return profile_dict(db, user)
 
@@ -92,8 +138,29 @@ def me(user=Depends(current_user, scope='function'), db: Session = Depends(get_d
 
 @app.patch('/api/auth/me')
 def update_me(data: Profile, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
+    patient = db.get(Patient, user.id)
+    if data.document_number is not None:
+        if patient.document_number and (
+            patient.document_type != data.document_type or patient.document_number != data.document_number
+        ):
+            raise HTTPException(409, 'El documento registrado no se puede cambiar desde este formulario.')
+        if not patient.document_number and data.privacy_accepted is not True:
+            raise HTTPException(422, 'Acepta el aviso de privacidad para registrar tu documento.')
+        duplicate = db.scalar(select(Patient.id).where(
+            Patient.document_type == data.document_type,
+            Patient.document_number == data.document_number,
+            Patient.id != user.id,
+        ))
+        if duplicate:
+            raise HTTPException(409, 'No pudimos guardar este documento. Verifica los datos e inténtalo de nuevo.')
+        if not patient.document_number:
+            patient.document_type = data.document_type
+            patient.document_number = data.document_number
+            user.privacy_notice_version = PRIVACY_NOTICE_VERSION
+            user.privacy_accepted_at = now()
     user.name = data.name
-    db.get(Patient, user.id).phone = data.phone
+    patient.phone = data.phone
+    db.add(AuditEvent(actor_id=user.id, action='PATIENT_PROFILE_UPDATED', entity_id=user.id))
     return profile_dict(db, user)
 
 def my_plan(db, uid):
