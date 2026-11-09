@@ -16,6 +16,8 @@ def apply_approved(db, user, payment):
         pp.plan_id = plan.id
         pp.status = 'ACTIVE'
         pp.expires_at = base + timedelta(days=plan.duration_days)
+        pp.cancelled_at = None
+        pp.cancelled_by = None
         notify(db, user.id, f'Tu plan {plan.name} está activo. Pago simulado aprobado.')
 
 def pay(db, user, data):

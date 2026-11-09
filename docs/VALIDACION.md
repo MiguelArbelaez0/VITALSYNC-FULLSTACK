@@ -1,5 +1,9 @@
 # Validación de la primera entrega
 
+## Actualización: cancelación universal de planes (9 de noviembre de 2026)
+
+La migración `20261112_plan_cancellation` quedó aplicada en PostgreSQL. La nueva ruta `POST /api/my-plan/cancel` se verificó con los cuatro planes de prueba (Básico, Estándar, Premium y un plan añadido durante la prueba). La suite backend completa aprobó **53 pruebas**; el frontend aprobó **17 pruebas unitarias** y **2 recorridos E2E** en escritorio y emulación iPhone 13. Ambos recorridos E2E cancelaron Estándar con la interfaz real y confirmaron desistimiento, resultado persistido, tarjeta actualizada y ausencia de desplazamiento horizontal. `npm run build` y `git diff --check` finalizaron sin errores.
+
 Entorno probado: Windows, Docker Desktop con motor Linux, Node 24.14.1, React 19.3.1, Vite 8.3.6, Python 3.13 dentro de contenedor y PostgreSQL 17. Ejecución del 8 de noviembre de 2026 (Bogotá).
 
 ## Evidencia automatizada

@@ -1117,6 +1117,64 @@ form {
   font-size: 12px;
   min-height: 55px;
 }
+.plan-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: auto;
+}
+.plan-actions .cancel-plan {
+  color: #245765;
+  background: #fff;
+  border-color: var(--primary);
+  border-radius: 10px;
+}
+.plan-actions .cancel-plan:hover {
+  color: #164752;
+  background: #eaf6f5;
+  border-color: #147f88;
+}
+.plan-cancellation-history {
+  margin: 18px 0;
+  padding: 16px 20px;
+  border-left: 3px solid var(--primary);
+  background: #f5f9fa;
+  border-radius: 8px;
+}
+.plan-cancellation-history h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+.plan-cancellation-history p {
+  margin: 4px 0;
+  color: #5c727b;
+  font-size: 13px;
+}
+.plan-cancel-dialog dl {
+  margin: 0 0 16px;
+}
+.plan-cancel-dialog dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 0;
+  border-bottom: 1px solid #e4edef;
+}
+.plan-cancel-dialog dt {
+  color: #5c727b;
+}
+.plan-cancel-dialog dd {
+  margin: 0;
+  text-align: right;
+  color: #153b46;
+  font-weight: 600;
+}
+.plan-cancel-dialog > p {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.plan-cancel-dialog .button-row {
+  justify-content: flex-end;
+}
 .price {
   font-size: 30px;
   letter-spacing: -1.5px;

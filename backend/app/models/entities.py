@@ -79,7 +79,27 @@ class PatientPlan(Base):
     plan_id = Column(Integer, ForeignKey('plans.id'), nullable=False)
     status = Column(String(16), nullable=False, default='ACTIVE')
     expires_at = Column(DateTime(timezone=True), nullable=False)
+    cancelled_at = Column(DateTime(timezone=True))
+    cancelled_by = Column(Integer, ForeignKey('users.id'))
     __table_args__ = (CheckConstraint("status IN ('ACTIVE','INACTIVE')"),)
+
+class PatientPlanCancellation(Base):
+    __tablename__ = 'patient_plan_cancellations'
+    id = Column(Integer, primary_key=True)
+    patient_id = Column(Integer, ForeignKey('patients.id'), nullable=False, index=True)
+    plan_id = Column(Integer, ForeignKey('plans.id'), nullable=False, index=True)
+    changed_by = Column(Integer, ForeignKey('users.id'), nullable=False)
+    previous_status = Column(String(16), nullable=False)
+    new_status = Column(String(16), nullable=False)
+    policy = Column(String(16), nullable=False, default='IMMEDIATE')
+    reason = Column(Text, nullable=False)
+    cancelled_at = Column(DateTime(timezone=True), nullable=False, default=now)
+    effective_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=now)
+    __table_args__ = (
+        CheckConstraint("previous_status = 'ACTIVE' AND new_status = 'INACTIVE'"),
+        CheckConstraint("policy = 'IMMEDIATE'"),
+    )
 
 class Hold(Base):
     __tablename__ = 'appointment_holds'

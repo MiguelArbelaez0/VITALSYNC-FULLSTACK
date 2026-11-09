@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
@@ -14,7 +14,7 @@ import {
   Appointments,
   Teleconsultation,
 } from "../features/appointments/Appointments";
-import { PaymentControls } from "../features/plans/Plans";
+import { PaymentControls, Plans } from "../features/plans/Plans";
 const user = {
   id: 2,
   name: "Valentina Torres",
@@ -419,5 +419,79 @@ describe("Reserva, comprobante y cancelación", () => {
       screen.queryByRole("button", { name: "Autorizar y simular aprobación" }),
     ).not.toBeInTheDocument();
     expect(fetch.mock.calls.every((c) => c[1]?.method !== "POST")).toBe(true);
+  });
+});
+
+describe("Cancelación universal de planes", () => {
+  const basic = { id: 1, name: "Básico", description: "Cobertura esencial", price: 59000, copay: 15000, duration_days: 30, specialty_ids: [1], modalities: ["PRESENCIAL"] };
+  const standard = { id: 2, name: "Estándar", description: "Cobertura extendida", price: 109000, copay: 10000, duration_days: 30, specialty_ids: [1], modalities: ["PRESENCIAL", "VIRTUAL"] };
+  const premium = { id: 3, name: "Premium", description: "Cobertura total", price: 189000, copay: 0, duration_days: 30, specialty_ids: [1], modalities: ["PRESENCIAL", "VIRTUAL"] };
+  const expires = "2026-12-09T17:00:00Z";
+
+  it("permite desistir y limita renovar/cancelar al plan activo", async () => {
+    const fetch = mockApi({
+      "/plans": [basic, standard, premium],
+      "/my-plan": { status: "ACTIVE", plan: standard, expires_at: expires, cancelled_at: null },
+      "/specialties": [{ id: 1, name: "Medicina general" }],
+    }, (path) => path === "/payments" ? respond([]) : undefined);
+    wrapper(<Plans />);
+    await screen.findByText("Renovar plan");
+    const planCard = (name: string) => screen.getAllByRole("heading", { name: new RegExp(`^${name}$`) })
+      .map((heading) => heading.closest("article"))
+      .find((article) => article !== null);
+    const standardCard = planCard("Estándar");
+    const basicCard = planCard("Básico");
+    const premiumCard = planCard("Premium");
+    expect(standardCard).toHaveTextContent("Renovar plan");
+    expect(standardCard).toHaveTextContent("Cancelar plan");
+    expect(basicCard).toHaveTextContent("Activar plan");
+    expect(basicCard).not.toHaveTextContent("Cancelar plan");
+    expect(premiumCard).toHaveTextContent("Activar plan");
+    expect(premiumCard).not.toHaveTextContent("Cancelar plan");
+
+    await userEvent.click(within(standardCard!).getByRole("button", { name: "Cancelar plan" }));
+    expect(await screen.findByText("Estándar", { selector: "dd" })).toBeInTheDocument();
+    expect(screen.getByText("Activo", { selector: "dd" })).toBeInTheDocument();
+    expect(screen.getByText("Inmediatamente al confirmar", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText(/Tus citas, pagos e historial se conservan/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Mantener mi plan" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(fetch.mock.calls.some(([url]) => url === "/api/my-plan/cancel")).toBe(false);
+    expect(screen.getByText("Activo", { selector: "span" })).toBeInTheDocument();
+  });
+
+  it("confirma en el backend y refresca la cobertura y su historial", async () => {
+    let cancelled = false;
+    let cancellationBody: unknown;
+    const fetch = mockApi({
+      "/plans": [basic, standard, premium],
+      "/specialties": [{ id: 1, name: "Medicina general" }],
+    }, (path, options) => {
+      if (path === "/my-plan") return respond(cancelled ? {
+        status: "INACTIVE", plan: standard, expires_at: expires,
+        cancelled_at: "2026-11-09T18:00:00Z", cancelled_by: 2,
+        cancellation_history: [{ id: 1, plan_id: 2, plan_name: "Estándar", previous_status: "ACTIVE", new_status: "INACTIVE", policy: "IMMEDIATE", cancelled_at: "2026-11-09T18:00:00Z", effective_at: "2026-11-09T18:00:00Z", changed_by: 2, reason: "Cancelación confirmada" }],
+      } : { status: "ACTIVE", plan: standard, expires_at: expires, cancelled_at: null });
+      if (path === "/my-plan/cancel" && options?.method === "POST") {
+        cancellationBody = JSON.parse(String(options.body));
+        cancelled = true;
+        return respond({ plan_id: 2, plan_name: "Estándar", previous_status: "ACTIVE", status: "INACTIVE", policy: "IMMEDIATE", cancelled_at: "2026-11-09T18:00:00Z", effective_at: "2026-11-09T18:00:00Z" });
+      }
+      return undefined;
+    });
+    wrapper(<Plans />);
+    await screen.findByText("Renovar plan");
+    const card = screen.getAllByRole("heading", { name: /^Estándar$/ })
+      .map((heading) => heading.closest("article"))
+      .find((article) => article !== null);
+    await userEvent.click(within(card!).getByRole("button", { name: "Cancelar plan" }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirmar cancelación" }));
+    expect(await screen.findByText(/Estándar se canceló/)).toBeInTheDocument();
+    expect(cancellationBody).toEqual({ plan_id: 2, confirmed: true });
+    expect(screen.getByText("Historial de planes")).toBeInTheDocument();
+    expect(screen.getAllByText(/Cancelado el/).length).toBeGreaterThan(0);
+    expect(await within(card!).findByRole("button", { name: "Activar plan" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancelar plan" })).not.toBeInTheDocument();
+    expect(fetch.mock.calls.filter(([url]) => url === "/api/my-plan").length).toBeGreaterThan(1);
   });
 });

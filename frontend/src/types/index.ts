@@ -20,6 +20,21 @@ export interface Membership {
   status: string;
   plan: Plan | null;
   expires_at: string | null;
+  cancelled_at?: string | null;
+  cancelled_by?: number | null;
+  cancellation_history?: PlanCancellationHistory[];
+}
+export interface PlanCancellationHistory {
+  id: number;
+  plan_id: number;
+  plan_name: string;
+  previous_status: string;
+  new_status: string;
+  policy: "IMMEDIATE";
+  cancelled_at: string;
+  effective_at: string;
+  changed_by: number;
+  reason: string;
 }
 export interface Specialty {
   id: number;

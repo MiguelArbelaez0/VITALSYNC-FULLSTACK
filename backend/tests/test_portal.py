@@ -97,6 +97,67 @@ def test_pending_plan_reconciliation(patient):
     assert patient.get('/api/my-plan').json()['expires_at']==expiry
     assert patient.post(f"/api/payments/{p['id']}/reconcile",json={'status':'REJECTED'}).status_code==409
 
+@pytest.mark.parametrize('plan_name',['Básico','Estándar','Premium','Plan Académico Nuevo'])
+def test_any_active_plan_can_be_cancelled_immediately_and_audited(patient,plan_name):
+    if plan_name == 'Plan Académico Nuevo':
+        with SessionLocal.begin() as db:
+            specialty_id=db.scalar(select(Specialty.id).order_by(Specialty.id))
+            db.add(Plan(name=plan_name,description='Plan de prueba extensible',price=75000,duration_days=45,copay=5000,specialty_ids=[specialty_id],modalities=['PRESENCIAL'],enabled=True))
+    saved_appointment=appointment(patient,plan_name)
+    uid=patient.get('/api/auth/me').json()['id']
+    membership=patient.get('/api/my-plan').json()
+    plan_id=membership['plan']['id']
+    response=patient.post('/api/my-plan/cancel',json={'plan_id':plan_id,'confirmed':True})
+    assert response.status_code==200,response.text
+    result=response.json()
+    assert result['plan_id']==plan_id and result['plan_name']==plan_name
+    assert result['previous_status']=='ACTIVE' and result['status']=='INACTIVE'
+    assert result['policy']=='IMMEDIATE' and result['cancelled_at']==result['effective_at']
+    after=patient.get('/api/my-plan').json()
+    assert after['status']=='INACTIVE' and after['cancelled_at']==result['cancelled_at']
+    assert after['cancellation_history'][0]['plan_name']==plan_name
+    assert after['cancellation_history'][0]['previous_status']=='ACTIVE'
+    assert after['cancellation_history'][0]['new_status']=='INACTIVE'
+    dashboard=patient.get('/api/dashboard').json()
+    assert dashboard['plan']['status']=='INACTIVE'
+    assert any(a['id']==saved_appointment['id'] and a['status']=='CONFIRMED' for a in patient.get('/api/appointments').json())
+    duplicate=patient.post('/api/my-plan/cancel',json={'plan_id':plan_id,'confirmed':True})
+    assert duplicate.status_code==409
+    with SessionLocal() as db:
+        history=db.scalars(select(PatientPlanCancellation).where(PatientPlanCancellation.patient_id==uid)).all()
+        assert len(history)==1 and history[0].plan_id==plan_id and history[0].changed_by==uid
+        assert db.scalar(select(func.count()).select_from(AuditEvent).where(AuditEvent.actor_id==uid,AuditEvent.action=='PATIENT_PLAN_CANCELLED',AuditEvent.entity_id==plan_id))==1
+        assert db.scalar(select(func.count()).select_from(Appointment).where(Appointment.id==saved_appointment['id'],Appointment.status=='CONFIRMED'))==1
+    next_slot=free_slot(patient)
+    rejected=patient.post('/api/holds',json={'availability_id':next_slot['id'],'modality':'PRESENCIAL'})
+    assert rejected.status_code==409 and 'activar tu plan' in rejected.json()['detail']
+
+def test_plan_cancellation_requires_ownership_and_explicit_confirmation(patient):
+    activate(patient,'Estándar')
+    plan_id=patient.get('/api/my-plan').json()['plan']['id']
+    with TestClient(app) as other:
+        other.post('/api/auth/register',json={'name':'Otro Paciente','email':'cancel-plan-owner@example.com','password':'Paciente2026!'})
+        assert other.post('/api/my-plan/cancel',json={'plan_id':plan_id,'confirmed':True}).status_code==404
+    assert patient.post('/api/my-plan/cancel',json={'plan_id':plan_id,'confirmed':False}).status_code==422
+    assert patient.post('/api/my-plan/cancel',json={'plan_id':plan_id}).status_code==422
+    with TestClient(app) as anonymous:
+        assert anonymous.post('/api/my-plan/cancel',json={'plan_id':plan_id,'confirmed':True}).status_code==401
+    assert patient.get('/api/my-plan').json()['status']=='ACTIVE'
+
+def test_plan_cancellation_blocks_pending_payments_and_active_holds(patient):
+    activate(patient,'Premium')
+    plan_id=patient.get('/api/my-plan').json()['plan']['id']
+    pending=patient.post('/api/payments',json={'kind':'PLAN','target_id':plan_id,'status':'PENDING','idempotency_key':uuid4().hex})
+    assert pending.status_code==200
+    blocked=patient.post('/api/my-plan/cancel',json={'plan_id':plan_id,'confirmed':True})
+    assert blocked.status_code==409 and 'pago pendiente' in blocked.json()['detail']
+    assert patient.post(f"/api/payments/{pending.json()['id']}/reconcile",json={'status':'REJECTED'}).status_code==200
+    active_hold=hold(patient)
+    blocked=patient.post('/api/my-plan/cancel',json={'plan_id':plan_id,'confirmed':True})
+    assert blocked.status_code==409 and 'retención activa' in blocked.json()['detail']
+    assert patient.post(f"/api/holds/{active_hold['id']}/release").status_code==200
+    assert patient.post('/api/my-plan/cancel',json={'plan_id':plan_id,'confirmed':True}).status_code==200
+
 def test_directory_availability_coverage_and_block(patient):
     assert len(patient.get('/api/specialties').json())==5
     assert len(patient.get('/api/doctors?specialty_id=1').json())==1

@@ -39,7 +39,7 @@ El seed crea un administrador ficticio (`admin@vitalsync.demo` / `AdminDemo2026!
 - Landing, registro exclusivo de pacientes, login, logout, sesión persistente y rutas protegidas.
 - Dashboard con plan, vencimiento, próxima cita, conteo de próximas y notificaciones reales.
 - Consultar y actualizar nombre y teléfono del perfil.
-- Ver planes Básico, Estándar y Premium; activar, renovar y cambiar cobertura mediante pago simulado.
+- Ver planes Básico, Estándar y Premium; activar, renovar, cambiar cobertura y cancelar el plan activo mediante pago simulado y una acción común para cualquier identificador de plan.
 - Buscar médicos por nombre y especialidad; consultar perfil, jornadas y horarios publicados.
 - Elegir atención presencial o virtual antes de buscar disponibilidad; el plan y el servidor validan cobertura y modalidad.
 - Retener un horario durante 10 minutos; el servidor valida médico, agenda, bloqueos, conflictos y cobertura.
@@ -49,7 +49,7 @@ El seed crea un administrador ficticio (`admin@vitalsync.demo` / `AdminDemo2026!
 - Abrir una teleconsulta simulada para ver y cambiar estados de demostración guardados; no se conecta audio ni video.
 - Leer notificaciones guardadas en PostgreSQL.
 
-Las retenciones no son citas. Los pagos pendientes no activan planes ni confirman citas. La cancelación conserva los datos y registra autor, motivo, fecha e historial. Un copago asociado se señala para gestión económica futura; **no se inventa una devolución**.
+Las retenciones no son citas. Los pagos pendientes no activan planes ni confirman citas. La cancelación de un plan es inmediata porque estos planes no tienen renovación automática: termina la cobertura para nuevas reservas, conserva citas, pagos e historial, y registra titular, plan, transición, fecha y auditoría. Los pagos pendientes o retenciones activas deben resolverse antes. No se genera una devolución automática.
 
 ## Stack y estructura
 

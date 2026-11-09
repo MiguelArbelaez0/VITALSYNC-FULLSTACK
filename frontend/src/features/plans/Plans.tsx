@@ -167,9 +167,47 @@ export function PaymentControls({
     </div>
   );
 }
+
+function PlanCardActions({
+  contracted,
+  variant,
+  onRenew,
+  onCancel,
+  onActivate,
+}: {
+  contracted: boolean;
+  variant: "default" | "outline";
+  onRenew: () => void;
+  onCancel: () => void;
+  onActivate: () => void;
+}) {
+  if (!contracted) {
+    return (
+      <Button className="full" variant={variant} onClick={onActivate}>
+        Activar plan
+      </Button>
+    );
+  }
+  return (
+    <div className="plan-actions">
+      <Button className="full" variant={variant} onClick={onRenew}>
+        Renovar plan
+      </Button>
+      <Button className="full cancel-plan" variant="outline" onClick={onCancel}>
+        Cancelar plan
+      </Button>
+    </div>
+  );
+}
+
 export function Plans() {
   const [selected, setSelected] = useState<Plan | null>(null);
   const [success, setSuccess] = useState(false);
+  const [cancelTarget, setCancelTarget] = useState<Plan | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelError, setCancelError] = useState<unknown>(null);
+  const [cancelMessage, setCancelMessage] = useState<{ name: string; at: string } | null>(null);
+  const client = useQueryClient();
   const q = useQuery({
     queryKey: ["plans"],
     queryFn: () => api<Plan[]>("/plans"),
@@ -195,26 +233,43 @@ export function Plans() {
           verificaremos de nuevo la disponibilidad.
         </div>
       )}
+      {cancelMessage && (
+        <div className="alert success" role="status">
+          {cancelMessage.name} se canceló. La cobertura terminó el {dateText(cancelMessage.at)}.
+        </div>
+      )}
       {m.isPending ? (
         <Loading />
       ) : m.error ? (
         <ErrorBox error={m.error} />
       ) : (
-        <section className="membership-banner">
-          <span className="stat-icon teal">
-            <ShieldCheck />
-          </span>
-          <div>
-            <span className="eyebrow">TU COBERTURA ACTUAL</span>
-            <h2>{m.data.plan?.name ?? "Tu bienestar comienza con un plan"}</h2>
-            <p>
-              {m.data.expires_at
-                ? "Vigencia hasta el " + dateText(m.data.expires_at)
-                : "Activa un plan para solicitar tus citas médicas."}
-            </p>
-          </div>
-          <Badge status={m.data.status} />
-        </section>
+        <>
+          <section className="membership-banner">
+            <span className="stat-icon teal"><ShieldCheck /></span>
+            <div>
+              <span className="eyebrow">TU COBERTURA ACTUAL</span>
+              <h2>{m.data.plan?.name ?? "Tu bienestar comienza con un plan"}</h2>
+              <p>
+                {m.data.cancelled_at
+                  ? "Cancelado el " + dateText(m.data.cancelled_at) + ". La cobertura terminó inmediatamente."
+                  : m.data.expires_at
+                    ? "Vigencia hasta el " + dateText(m.data.expires_at)
+                    : "Activa un plan para solicitar tus citas médicas."}
+              </p>
+            </div>
+            <Badge status={m.data.cancelled_at ? "CANCELLED" : m.data.status} />
+          </section>
+          {!!m.data.cancellation_history?.length && (
+            <section className="plan-cancellation-history" aria-label="Historial de cancelaciones de planes">
+              <h2>Historial de planes</h2>
+              {m.data.cancellation_history.map((item) => (
+                <p key={item.id}>
+                  {item.plan_name} · Cancelado el {dateText(item.cancelled_at)} · Cobertura terminada inmediatamente
+                </p>
+              ))}
+            </section>
+          )}
+        </>
       )}
       {q.isPending ? (
         <Loading />
@@ -254,16 +309,13 @@ export function Plans() {
                   ))}
               </ul>
               <p className="coverage-modalities">Modalidades: {p.modalities.map((x) => x === "VIRTUAL" ? "Virtual" : "Presencial").join(" · ")}</p>
-              <Button
-                className="full"
+              <PlanCardActions
+                contracted={m.data?.plan?.id === p.id && m.data.status === "ACTIVE"}
                 variant={i === 1 ? "default" : "outline"}
-                onClick={() => {
-                  setSelected(p);
-                  setSuccess(false);
-                }}
-              >
-                {m.data?.plan?.id === p.id ? "Renovar plan" : "Activar plan"}
-              </Button>
+                onRenew={() => { setSelected(p); setSuccess(false); }}
+                onCancel={() => { setCancelTarget(p); setCancelError(null); setCancelMessage(null); }}
+                onActivate={() => { setSelected(p); setSuccess(false); }}
+              />
             </article>
           ))}
         </div>
@@ -299,6 +351,49 @@ export function Plans() {
               }}
             />
           </>
+        )}
+      </Dialog>
+      <Dialog
+        open={!!cancelTarget}
+        onOpenChange={(open) => { if (!open && !cancelBusy) { setCancelTarget(null); setCancelError(null); } }}
+        title={"Cancelar plan " + (cancelTarget?.name ?? "")}
+        description="Revisa qué cambiará antes de confirmar la cancelación."
+      >
+        {cancelTarget && (
+          <div className="plan-cancel-dialog">
+            <dl>
+              <div><dt>Plan contratado</dt><dd>{cancelTarget.name}</dd></div>
+              <div><dt>Estado actual</dt><dd>{statuses[m.data?.status ?? "INACTIVE"] ?? m.data?.status}</dd></div>
+              <div><dt>Vigencia actual</dt><dd>{m.data?.expires_at ? dateText(m.data.expires_at) : "No disponible"}</dd></div>
+              <div><dt>Fecha efectiva</dt><dd>Inmediatamente al confirmar · {dateText(new Date().toISOString())}</dd></div>
+            </dl>
+            <p>La cobertura termina inmediatamente y no podrás crear nuevas reservas con este plan. Tus citas, pagos e historial se conservan. No se hace una devolución automática.</p>
+            <ErrorBox error={cancelError} />
+            <div className="button-row">
+              <Button variant="outline" disabled={cancelBusy} onClick={() => setCancelTarget(null)}>
+                Mantener mi plan
+              </Button>
+              <Button disabled={cancelBusy} onClick={() => void (async () => {
+                setCancelBusy(true);
+                setCancelError(null);
+                try {
+                  const result = await post<{ plan_name: string; effective_at: string }>("/my-plan/cancel", {
+                    plan_id: cancelTarget.id,
+                    confirmed: true,
+                  });
+                  await client.invalidateQueries();
+                  setCancelMessage({ name: result.plan_name, at: result.effective_at });
+                  setCancelTarget(null);
+                } catch (error) {
+                  setCancelError(error);
+                } finally {
+                  setCancelBusy(false);
+                }
+              })()}>
+                {cancelBusy ? "Cancelando…" : "Confirmar cancelación"}
+              </Button>
+            </div>
+          </div>
         )}
       </Dialog>
     </>

@@ -183,4 +183,22 @@ test("Paciente real: registro, login, plan, copago, cita y cancelación", async 
   await page.getByLabel("Confirmo que deseo cancelar mi cita.").check();
   await page.getByRole("button", { name: "Confirmar cancelación" }).click();
   await expect(page.getByText("Cancelada", { exact: true })).toBeVisible();
+  await page.goto("/portal/plans");
+  const standardPlan = page
+    .locator(".plan-card")
+    .filter({ has: page.getByRole("heading", { name: "Estándar", exact: true }) });
+  await expect(standardPlan.getByRole("button", { name: "Cancelar plan" })).toBeVisible();
+  await standardPlan.getByRole("button", { name: "Cancelar plan" }).click();
+  await expect(page.getByRole("dialog")).toContainText("Estándar");
+  await expect(page.getByRole("dialog")).toContainText("Inmediatamente al confirmar");
+  await page.getByRole("button", { name: "Mantener mi plan" }).click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await standardPlan.getByRole("button", { name: "Cancelar plan" }).click();
+  await page.getByRole("button", { name: "Confirmar cancelación" }).click();
+  await expect(page.getByRole("status")).toContainText("Estándar se canceló");
+  await expect(page.getByText("Cancelada", { exact: true })).toBeVisible();
+  await expect(standardPlan.getByRole("button", { name: "Activar plan" })).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+  ).toBeTruthy();
 });

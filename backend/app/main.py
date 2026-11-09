@@ -9,9 +9,9 @@ from app.core.config import *
 from app.core.security import current_user, passwords, create_session, digest
 from app.db.session import get_db
 from app.models.entities import *
-from app.schemas.requests import Login, Register, Profile, PaymentInput, Reconcile, HoldInput, Cancel, TeleconsultationStatus
+from app.schemas.requests import Login, Register, Profile, PaymentInput, Reconcile, HoldInput, Cancel, CancelPlanInput, TeleconsultationStatus
 from app.repositories.queries import *
-from app.services import booking, payments
+from app.services import booking, payments, plans as plan_services
 
 app = FastAPI(title='VITALSYNC · Portal del paciente', version='1.0.0')
 
@@ -99,8 +99,36 @@ def update_me(data: Profile, user=Depends(current_user, scope='function'), db: S
 def my_plan(db, uid):
     pp = db.get(PatientPlan, uid)
     if not pp:
-        return {'status': 'INACTIVE', 'plan': None, 'expires_at': None}
-    return {'status': 'EXPIRED' if pp.expires_at <= now() else pp.status, 'plan': db.get(Plan, pp.plan_id), 'expires_at': pp.expires_at}
+        return {'status': 'INACTIVE', 'plan': None, 'expires_at': None, 'cancelled_at': None, 'cancelled_by': None, 'cancellation_history': []}
+    status = 'EXPIRED' if pp.status == 'ACTIVE' and pp.expires_at <= now() else pp.status
+    history = db.execute(
+        select(PatientPlanCancellation, Plan.name)
+        .join(Plan, Plan.id == PatientPlanCancellation.plan_id)
+        .where(PatientPlanCancellation.patient_id == uid)
+        .order_by(PatientPlanCancellation.id.desc())
+    ).all()
+    return {
+        'status': status,
+        'plan': db.get(Plan, pp.plan_id),
+        'expires_at': pp.expires_at,
+        'cancelled_at': pp.cancelled_at,
+        'cancelled_by': pp.cancelled_by,
+        'cancellation_history': [
+            {
+                'id': item.id,
+                'plan_id': item.plan_id,
+                'plan_name': name,
+                'previous_status': item.previous_status,
+                'new_status': item.new_status,
+                'policy': item.policy,
+                'cancelled_at': item.cancelled_at,
+                'effective_at': item.effective_at,
+                'changed_by': item.changed_by,
+                'reason': item.reason,
+            }
+            for item, name in history
+        ],
+    }
 
 @app.get('/api/plans')
 def plans(db: Session = Depends(get_db, scope='function')):
@@ -109,6 +137,10 @@ def plans(db: Session = Depends(get_db, scope='function')):
 @app.get('/api/my-plan')
 def get_plan(user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
     return my_plan(db, user.id)
+
+@app.post('/api/my-plan/cancel')
+def cancel_my_plan(data: CancelPlanInput, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
+    return plan_services.cancel_subscription(db, user, data.plan_id)
 
 @app.get('/api/dashboard')
 def dashboard(user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):

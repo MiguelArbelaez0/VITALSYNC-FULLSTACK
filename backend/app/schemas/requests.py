@@ -27,6 +27,10 @@ class PaymentInput(Input):
 class Reconcile(Input):
     status: Literal['APPROVED', 'REJECTED']
 
+class CancelPlanInput(Input):
+    plan_id: int = Field(gt=0)
+    confirmed: Literal[True]
+
 class HoldInput(Input):
     availability_id: int = Field(gt=0)
     modality: Literal['PRESENCIAL', 'VIRTUAL'] = 'PRESENCIAL'

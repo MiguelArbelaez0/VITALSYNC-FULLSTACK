@@ -56,7 +56,8 @@ Contrato interactivo: `/docs`. JSON completo: `/openapi.json`. Las rutas protegi
 | GET / PATCH | `/api/auth/me` | Perfil propio / actualizar nombre y teléfono |
 | GET | `/api/dashboard` | Indicadores y próxima cita |
 | GET | `/api/plans` | Catálogo y coberturas |
-| GET | `/api/my-plan` | Plan y vigencia propios |
+| GET | `/api/my-plan` | Plan, vigencia e historial de cancelación propios |
+| POST | `/api/my-plan/cancel` | Cancelación inmediata del plan propio; cuerpo `plan_id`, `confirmed=true` |
 | GET | `/api/specialties` | Especialidades persistidas |
 | GET | `/api/doctors?search=&specialty_id=` | Directorio con filtros |
 | GET | `/api/doctors?modality=PRESENCIAL\|VIRTUAL` | Filtrar médicos por modalidad disponible |
@@ -82,6 +83,8 @@ Los endpoints públicos son health, config, planes, especialidades, registro, lo
 ## Errores del dominio
 
 HTTP 401: sesión ausente/vencida o credenciales inválidas. 403: rol/origen no autorizado o demo deshabilitada. 404: recurso inexistente o ajeno. 409: plan inactivo/vencido/sin cobertura, horario bloqueado/ocupado, retención vencida, pago pendiente, cambio de estado o versión, política de cancelación. 422: formulario inválido o falta de confirmación expresa. 503: error de base de datos con rollback. Los mensajes de negocio están en español.
+
+La cancelación de planes usa una política inmediata, pues no existe renovación automática que pueda desactivarse. Solo el titular puede cancelar su plan activo y vigente; se bloquea si tiene un pago pendiente o una retención activa de ese plan. La operación cambia la cobertura a inactiva en una transacción, registra la transición y auditoría, y notifica al paciente. Las citas, pagos e historial se conservan; no se crean devoluciones automáticas.
 
 La sala virtual no utiliza audio ni video, no pide permisos del dispositivo, no crea enlaces y no representa atención médica.
 
