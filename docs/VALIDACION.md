@@ -4,6 +4,10 @@
 
 La migración `20261112_plan_cancellation` quedó aplicada en PostgreSQL. La nueva ruta `POST /api/my-plan/cancel` se verificó con los cuatro planes de prueba (Básico, Estándar, Premium y un plan añadido durante la prueba). La suite backend completa aprobó **53 pruebas**; el frontend aprobó **17 pruebas unitarias** y **2 recorridos E2E** en escritorio y emulación iPhone 13. Ambos recorridos E2E cancelaron Estándar con la interfaz real y confirmaron desistimiento, resultado persistido, tarjeta actualizada y ausencia de desplazamiento horizontal. `npm run build` y `git diff --check` finalizaron sin errores.
 
+## Actualización: modalidades y cobertura (9 de noviembre de 2026)
+
+La consulta virtual aparece primero como recomendada y se puede cambiar por presencial. Se validó la cobertura por las modalidades y especialidades configuradas, los copagos, los profesionales y turnos compatibles, el filtro de Mis citas y el rechazo de modalidades no admitidas. Alembic aplicó `20261113_modality_guards` sobre PostgreSQL existente con restricciones JSONB e índices GIN; no se borraron ni recrearon volúmenes. Resultado: **64 pruebas backend**, **19 frontend**, **2 E2E** (escritorio y móvil) y compilación de producción aprobados. E2E verificó que Básico no puede retener cita virtual, cambió a Estándar, reservó en ambas modalidades y completó cancelación e historial. La comprobación `verify_persistence.py` terminó en **PASS** tras reiniciar los servicios conservando PostgreSQL y comprobar cita presencial y virtual, pagos, plan, sesión, sala virtual e historial.
+
 Entorno probado: Windows, Docker Desktop con motor Linux, Node 24.14.1, React 19.3.1, Vite 8.3.6, Python 3.13 dentro de contenedor y PostgreSQL 17. Ejecución del 8 de noviembre de 2026 (Bogotá).
 
 ## Evidencia automatizada

@@ -47,7 +47,7 @@ test("Paciente real: registro, login, plan, copago, cita y cancelación", async 
     ),
     fullPage: true,
   });
-  await page.goto("/portal/doctors");
+  await page.goto("/portal/doctors?modality=PRESENCIAL");
   await page
     .getByRole("link", { name: "Ver perfil y disponibilidad" })
     .first()
@@ -73,7 +73,20 @@ test("Paciente real: registro, login, plan, copago, cita y cancelación", async 
   await expect(page.getByText("Pendiente", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Conciliar como aprobado" }).click();
   await expect(page.getByRole("status")).toContainText("Tu plan se activó");
-  await page.goto("/portal/doctors");
+  await page.goto("/portal/doctors?modality=VIRTUAL");
+  await page.getByRole("link", { name: "Ver perfil y disponibilidad" }).first().click();
+  await expect(page.getByText(/Tu plan actual no incluye consultas virtuales/)).toBeVisible();
+  await page.locator(".time-slot:not([disabled])").first().click();
+  await expect(page.getByRole("button", { name: "Retener horario y continuar" })).toBeDisabled();
+  await page.goto("/portal/plans");
+  await page
+    .locator(".plan-card")
+    .filter({ has: page.getByRole("heading", { name: "Estándar", exact: true }) })
+    .getByRole("button", { name: "Activar plan" })
+    .click();
+  await page.getByRole("button", { name: "Autorizar y simular aprobación" }).click();
+  await expect(page.getByRole("status")).toContainText("Tu plan se activó");
+  await page.goto("/portal/doctors?modality=PRESENCIAL");
   await page
     .getByLabel("Filtrar por especialidad")
     .selectOption({ label: "Medicina general" });
@@ -150,7 +163,7 @@ test("Paciente real: registro, login, plan, copago, cita y cancelación", async 
   await page
     .locator(".plan-card")
     .filter({ has: page.getByRole("heading", { name: "Estándar", exact: true }) })
-    .getByRole("button", { name: "Activar plan" })
+    .getByRole("button", { name: "Renovar plan" })
     .click();
   await page.getByRole("button", { name: "Autorizar y simular aprobación" }).click();
   await expect(page.getByRole("status")).toContainText("Tu plan se activó");
@@ -164,7 +177,7 @@ test("Paciente real: registro, login, plan, copago, cita y cancelación", async 
   await page.getByRole("button", { name: "Autorizar y simular aprobación" }).click();
   await page.getByRole("button", { name: "Confirmar cita", exact: true }).click();
   await expect(page.getByRole("heading", { name: "¡Tu cita está confirmada!" })).toBeVisible();
-  await expect(page.locator(".receipt")).toContainText("Virtual · Teleconsulta simulada");
+  await expect(page.locator(".receipt")).toContainText("Consulta virtual · Teleconsulta simulada");
   await page.getByRole("link", { name: "Ver teleconsulta simulada" }).click();
   await expect(page.getByText("Teleconsulta simulada — sin conexión de audio o video")).toBeVisible();
   await page.getByRole("button", { name: /Simular siguiente estado: Sala disponible/ }).click();

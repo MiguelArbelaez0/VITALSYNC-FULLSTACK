@@ -10,7 +10,7 @@ import {
   money,
   statuses,
 } from "../../services/api";
-import type { Appointment, Config } from "../../types";
+import type { Appointment, Config, Modality } from "../../types";
 import {
   Badge,
   Empty,
@@ -23,18 +23,20 @@ import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 export function Appointments() {
   const [tab, setTab] = useState("upcoming");
+  const [modalityFilter, setModalityFilter] = useState<"ALL" | Modality>("ALL");
   const q = useQuery({
     queryKey: ["appointments"],
     queryFn: () => api<Appointment[]>("/appointments"),
   });
   const items = q.data
     ?.filter((a) =>
-      tab === "cancelled"
+      (modalityFilter === "ALL" || a.modality === modalityFilter) &&
+      (tab === "cancelled"
         ? a.status === "CANCELLED"
         : tab === "history"
           ? a.status !== "CANCELLED" &&
             (a.status === "ATTENDED" || new Date(a.starts_at) <= new Date())
-          : a.status === "CONFIRMED" && new Date(a.starts_at) > new Date(),
+          : a.status === "CONFIRMED" && new Date(a.starts_at) > new Date()),
     )
     .sort((a, b) =>
       tab === "upcoming"
@@ -64,6 +66,18 @@ export function Appointments() {
           </button>
         ))}
       </div>
+      <label className="appointment-modality-filter">
+        Filtrar por modalidad
+        <select
+          aria-label="Filtrar citas por modalidad"
+          value={modalityFilter}
+          onChange={(event) => setModalityFilter(event.target.value as "ALL" | Modality)}
+        >
+          <option value="ALL">Todas</option>
+          <option value="VIRTUAL">Virtuales</option>
+          <option value="PRESENCIAL">Presenciales</option>
+        </select>
+      </label>
       {q.isPending ? (
         <Loading />
       ) : q.error ? (
@@ -113,7 +127,7 @@ export function Appointments() {
                 </span>
                 <span>
                   <Clock3 size={17} />
-                  {a.modality === 'VIRTUAL' ? 'Virtual' : 'Presencial'} · {timeText(a.starts_at)}
+                  {a.modality === 'VIRTUAL' ? 'Cita virtual' : 'Cita presencial'} · {timeText(a.starts_at)}
                 </span>
               </div>
               <Button asChild variant="outline">
@@ -226,7 +240,7 @@ export function AppointmentDetail() {
           </div>
           <div>
             <dt>Modalidad</dt>
-            <dd>{a.modality === 'VIRTUAL' ? 'Virtual · Teleconsulta simulada' : 'Presencial · Sede VITALSYNC Bogotá (ficticia)'}</dd>
+            <dd>{a.modality === 'VIRTUAL' ? 'Consulta virtual · Teleconsulta simulada' : 'Consulta presencial · Sede VITALSYNC Bogotá (ficticia)'}</dd>
           </div>
         </dl>
         {a.status === "CANCELLED" && (

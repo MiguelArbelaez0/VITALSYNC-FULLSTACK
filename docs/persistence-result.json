@@ -1,10 +1,10 @@
 {
   "result": "PASS",
-  "user_id": 26,
-  "payment_id": 63,
+  "user_id": 37,
+  "payment_id": 112,
   "appointment_codes": [
-    "VS-774DC13966",
-    "VS-EC44BD0BE9"
+    "VS-90D46C0D39",
+    "VS-BC4C40C057"
   ],
   "verified": [
     "sesión HttpOnly",

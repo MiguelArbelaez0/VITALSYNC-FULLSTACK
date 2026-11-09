@@ -429,9 +429,45 @@ def test_plan_without_virtual_coverage_rejected_before_hold_or_copay(patient):
     activate(patient,'Básico')
     slot=virtual_slot(patient,1)
     error=patient.post('/api/holds',json={'availability_id':slot['id'],'modality':'VIRTUAL'})
-    assert error.status_code==409 and 'no cubre la modalidad virtual' in error.json()['detail']
+    assert error.status_code==409 and 'no incluye consultas virtuales' in error.json()['detail']
     assert patient.get('/api/appointments').json()==[]
     assert all(p['kind']=='PLAN' for p in patient.get('/api/payments').json())
+
+@pytest.mark.parametrize('plan_name,doctor_id,modality,copay',[
+    ('Básico',1,'PRESENCIAL',15000),
+    ('Estándar',2,'VIRTUAL',10000),
+    ('Estándar',3,'PRESENCIAL',10000),
+    ('Premium',5,'VIRTUAL',0),
+    ('Premium',4,'PRESENCIAL',0),
+])
+def test_plan_coverage_is_configured_by_specialty_modality_and_copay(patient,plan_name,doctor_id,modality,copay):
+    activate(patient,plan_name)
+    slots=patient.get(f'/api/doctors/{doctor_id}/availability?modality={modality}').json()
+    slot=next(s for s in slots if s['available'])
+    response=patient.post('/api/holds',json={'availability_id':slot['id'],'modality':modality})
+    assert response.status_code==201,response.text
+    assert response.json()['modality']==modality and response.json()['copay']==copay
+
+def test_standard_plan_rejects_uncovered_specialty(patient):
+    activate(patient,'Estándar')
+    slot=next(s for s in patient.get('/api/doctors/4/availability?modality=VIRTUAL').json() if s['available'])
+    response=patient.post('/api/holds',json={'availability_id':slot['id'],'modality':'VIRTUAL'})
+    assert response.status_code==409 and 'no cubre esta especialidad' in response.json()['detail']
+    assert patient.get('/api/appointments').json()==[]
+
+@pytest.mark.parametrize('doctor_modalities,requested',[
+    (['PRESENCIAL'],'VIRTUAL'),
+    (['VIRTUAL'],'PRESENCIAL'),
+])
+def test_doctor_rejects_unsupported_requested_modality(patient,doctor_modalities,requested):
+    activate(patient,'Premium')
+    with SessionLocal.begin() as db:
+        doctor=db.get(Doctor,1)
+        doctor.modalities=doctor_modalities
+        slot_id=db.scalar(select(Availability.id).where(Availability.doctor_id==1,Availability.starts_at>now()).order_by(Availability.starts_at))
+    response=patient.post('/api/holds',json={'availability_id':slot_id,'modality':requested})
+    assert response.status_code==409 and 'no ofrece citas' in response.json()['detail']
+    assert patient.get('/api/appointments').json()==[]
 
 def test_standard_plan_virtual_copay_confirmation_and_receipt(patient):
     activate(patient,'Estándar')
@@ -502,3 +538,9 @@ def test_virtual_appointment_migration_preserves_preexisting_data(patient):
         assert db.scalar(select(func.count()).select_from(Appointment))==old_count
         assert db.scalar(text("SELECT count(*) FROM appointments WHERE modality NOT IN ('PRESENCIAL','VIRTUAL')"))==0
         assert db.scalar(text("SELECT count(*) FROM doctor_availability WHERE modalities @> '[\"PRESENCIAL\"]'::jsonb"))>0
+
+@pytest.mark.parametrize('table,where',[('doctors','id = 1'),('doctor_availability','id = 1'),('plans',"name = 'Básico'")])
+def test_modality_database_constraints_reject_unknown_values(patient,table,where):
+    with pytest.raises(IntegrityError):
+        with SessionLocal.begin() as db:
+            db.execute(text(f"UPDATE {table} SET modalities = '[\"WEBRTC\"]'::jsonb WHERE {where}"))

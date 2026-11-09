@@ -308,7 +308,11 @@ export function Plans() {
                     </li>
                   ))}
               </ul>
-              <p className="coverage-modalities">Modalidades: {p.modalities.map((x) => x === "VIRTUAL" ? "Virtual" : "Presencial").join(" · ")}</p>
+              <div className="coverage-modalities" aria-label="Modalidades cubiertas">
+                {p.modalities.includes("VIRTUAL") && <span>✓ Consultas virtuales</span>}
+                {p.modalities.includes("PRESENCIAL") && <span>✓ Consultas presenciales</span>}
+                {!p.modalities.includes("VIRTUAL") && <span className="coverage-exclusion">No incluye consultas virtuales</span>}
+              </div>
               <PlanCardActions
                 contracted={m.data?.plan?.id === p.id && m.data.status === "ACTIVE"}
                 variant={i === 1 ? "default" : "outline"}

@@ -39,6 +39,10 @@ class Doctor(Base):
     bio = Column(Text, nullable=False)
     modalities = Column(JSONB, nullable=False, default=lambda: ['PRESENCIAL'])
     enabled = Column(Boolean, default=True, nullable=False)
+    __table_args__ = (
+        CheckConstraint("jsonb_typeof(modalities) = 'array' AND modalities <> '[]'::jsonb AND modalities <@ '[\"PRESENCIAL\",\"VIRTUAL\"]'::jsonb", name='ck_doctors_modalities'),
+        Index('ix_doctors_modalities_gin', 'modalities', postgresql_using='gin'),
+    )
 
 class Availability(Base):
     __tablename__ = 'doctor_availability'
@@ -49,7 +53,12 @@ class Availability(Base):
     published_by = Column(Integer, ForeignKey('users.id'), nullable=False)
     published = Column(Boolean, default=True, nullable=False)
     modalities = Column(JSONB, nullable=False, default=lambda: ['PRESENCIAL'])
-    __table_args__ = (UniqueConstraint('doctor_id', 'starts_at'), CheckConstraint('ends_at > starts_at'))
+    __table_args__ = (
+        UniqueConstraint('doctor_id', 'starts_at'),
+        CheckConstraint('ends_at > starts_at'),
+        CheckConstraint("jsonb_typeof(modalities) = 'array' AND modalities <> '[]'::jsonb AND modalities <@ '[\"PRESENCIAL\",\"VIRTUAL\"]'::jsonb", name='ck_doctor_availability_modalities'),
+        Index('ix_doctor_availability_modalities_gin', 'modalities', postgresql_using='gin'),
+    )
 
 class DoctorBlock(Base):
     __tablename__ = 'doctor_blocks'
@@ -71,7 +80,10 @@ class Plan(Base):
     specialty_ids = Column(JSONB, nullable=False)
     modalities = Column(JSONB, nullable=False, default=lambda: ['PRESENCIAL'])
     enabled = Column(Boolean, default=True, nullable=False)
-    __table_args__ = (CheckConstraint('price >= 0 AND copay >= 0 AND duration_days > 0'),)
+    __table_args__ = (
+        CheckConstraint('price >= 0 AND copay >= 0 AND duration_days > 0'),
+        CheckConstraint("jsonb_typeof(modalities) = 'array' AND modalities <> '[]'::jsonb AND modalities <@ '[\"PRESENCIAL\",\"VIRTUAL\"]'::jsonb", name='ck_plans_modalities'),
+    )
 
 class PatientPlan(Base):
     __tablename__ = 'patient_plans'

@@ -27,7 +27,9 @@ def active_plan(db, patient_id, specialty_id, modality='PRESENCIAL'):
     if not plan.enabled or specialty_id not in plan.specialty_ids:
         fail('Tu plan no cubre esta especialidad. Consulta otro plan o especialidad')
     if modality not in plan.modalities:
-        fail(f'Tu plan no cubre la modalidad {modality.lower()}. Consulta otro plan o modalidad')
+        if modality == 'VIRTUAL':
+            fail('Tu plan actual no incluye consultas virtuales. Puedes cambiar a un plan con esta modalidad.')
+        fail('Tu plan actual no incluye consultas presenciales. Puedes cambiar a un plan con esta modalidad.')
     return plan
 
 def overlaps(model, start, end):

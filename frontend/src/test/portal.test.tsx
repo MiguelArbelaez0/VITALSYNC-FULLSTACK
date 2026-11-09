@@ -173,8 +173,8 @@ describe("Datos, estados y disponibilidad", () => {
     const fetch = mockApi(
       {
         "/specialties": [{ id: 1, name: "Medicina general" }],
-        "/doctors?search=&modality=PRESENCIAL": [
-          { id: 1, name: "Dra. Isabella Ríos", specialty: "Medicina general" },
+        "/doctors?search=&modality=VIRTUAL": [
+          { id: 1, name: "Dra. Isabella Ríos", specialty: "Medicina general", modalities: ["PRESENCIAL", "VIRTUAL"] },
         ],
       },
       (path) =>
@@ -200,6 +200,7 @@ describe("Datos, estados y disponibilidad", () => {
           specialty: "Medicina general",
           specialty_id: 1,
           bio: "Perfil ficticio",
+          modalities: ["PRESENCIAL", "VIRTUAL"],
         },
         "/my-plan": { status: "ACTIVE", plan: { id: 1, specialty_ids: [1], modalities: ["PRESENCIAL"] } },
         "/doctors/1/availability?modality=PRESENCIAL": [
@@ -224,7 +225,7 @@ describe("Datos, estados y disponibilidad", () => {
         <Route path="/portal/doctors/:id" element={<DoctorProfile />} />
         <Route path="/portal/booking/:id" element={<p>Retención creada</p>} />
       </Routes>,
-      "/portal/doctors/1",
+      "/portal/doctors/1?modality=PRESENCIAL",
     );
     await screen.findByRole("combobox");
     await userEvent.selectOptions(screen.getByRole("combobox"), "2026-11-13");
@@ -404,6 +405,24 @@ describe("Reserva, comprobante y cancelación", () => {
     expect(await screen.findByText("Cancelada")).toBeInTheDocument();
     expect(screen.getByText("Dra. Isabella Ríos")).toBeInTheDocument();
   });
+  it("filtra Mis citas por modalidad sin mezclar virtuales y presenciales", async () => {
+    mockApi({
+      "/appointments": [
+        { ...appointment, id: 1, modality: "VIRTUAL" },
+        { ...appointment, id: 2, code: "VS-PRES", modality: "PRESENCIAL" },
+      ],
+    });
+    wrapper(<Appointments />);
+    await screen.findByText(/Cita virtual/);
+    expect(screen.getByText(/Cita presencial/)).toBeInTheDocument();
+    const filter = screen.getByRole("combobox", { name: "Filtrar citas por modalidad" });
+    await userEvent.selectOptions(filter, "VIRTUAL");
+    expect(screen.getByText(/Cita virtual/)).toBeInTheDocument();
+    expect(screen.queryByText(/Cita presencial/)).not.toBeInTheDocument();
+    await userEvent.selectOptions(filter, "PRESENCIAL");
+    expect(screen.getByText(/Cita presencial/)).toBeInTheDocument();
+    expect(screen.queryByText(/Cita virtual/)).not.toBeInTheDocument();
+  });
   it("pago pendiente ofrece conciliación sin duplicar", async () => {
     const fetch = mockApi({
       "/payments": [{ id: 5, kind: "COPAY", hold_id: 9, status: "PENDING" }],
@@ -419,6 +438,32 @@ describe("Reserva, comprobante y cancelación", () => {
       screen.queryByRole("button", { name: "Autorizar y simular aprobación" }),
     ).not.toBeInTheDocument();
     expect(fetch.mock.calls.every((c) => c[1]?.method !== "POST")).toBe(true);
+  });
+});
+
+describe("Modalidades de atención", () => {
+  it("prioriza teleconsulta simulada y muestra todas las modalidades del médico", async () => {
+    const fetch = mockApi({
+      "/doctors?search=&modality=VIRTUAL": [{
+        id: 1,
+        name: "Dra. Isabella Ríos",
+        specialty_id: 1,
+        specialty: "Medicina general",
+        bio: "Profesional de demostración.",
+        enabled: true,
+        modalities: ["PRESENCIAL", "VIRTUAL"],
+      }],
+      "/specialties": [{ id: 1, name: "Medicina general" }],
+    });
+    wrapper(<Doctors />);
+    const options = await screen.findAllByRole("button", { name: /Consulta|Cita/ });
+    expect(options[0]).toHaveTextContent("Consulta virtual");
+    expect(options[0]).toHaveTextContent("Recomendada");
+    expect(options[0]).toHaveAttribute("aria-pressed", "true");
+    const doctorModes = await screen.findByRole("group", { name: "Modalidades de Dra. Isabella Ríos" });
+    expect(doctorModes).toHaveTextContent("Virtual");
+    expect(doctorModes).toHaveTextContent("Presencial");
+    expect(fetch.mock.calls.some(([url]) => url === "/api/doctors?search=&modality=VIRTUAL")).toBe(true);
   });
 });
 
@@ -444,8 +489,10 @@ describe("Cancelación universal de planes", () => {
     const premiumCard = planCard("Premium");
     expect(standardCard).toHaveTextContent("Renovar plan");
     expect(standardCard).toHaveTextContent("Cancelar plan");
+    expect(standardCard).toHaveTextContent("Consultas virtuales");
     expect(basicCard).toHaveTextContent("Activar plan");
     expect(basicCard).not.toHaveTextContent("Cancelar plan");
+    expect(basicCard).toHaveTextContent("No incluye consultas virtuales");
     expect(premiumCard).toHaveTextContent("Activar plan");
     expect(premiumCard).not.toHaveTextContent("Cancelar plan");
 

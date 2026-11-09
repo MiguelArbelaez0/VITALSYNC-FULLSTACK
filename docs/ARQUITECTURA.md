@@ -24,7 +24,7 @@ El backend no confía en roles, importes, cobertura, disponibilidad ni confirmac
 | Pago | `APPROVED`, `REJECTED`, `PENDING`, `IN_RECONCILIATION`; dos últimos conciliables a un resultado definitivo |
 | Retención | `ACTIVE`, `CONFIRMED`, `RELEASED`; `ACTIVE` vencida deja de bloquear por `expires_at` |
 | Cita | `CONFIRMED`, `CANCELLED`, `ATTENDED`; la atención es futura, el paciente no puede marcarla |
-| Modalidad | `PRESENCIAL` o `VIRTUAL` en médicos, turnos, retenciones y citas; la migración conserva las citas anteriores como presenciales |
+| Modalidad | `PRESENCIAL` o `VIRTUAL` en médicos, turnos, retenciones y citas; planes mantienen modalidades y especialidades configurables por identificador; restricciones JSONB y GIN respaldan valores válidos y filtros |
 | Teleconsulta simulada | `PROGRAMADA` → `SALA_DISPONIBLE` → `PACIENTE_EN_ESPERA` → `MEDICO_EN_ESPERA` → `EN_ATENCION` → `FINALIZADA`; también admite los estados terminales `PACIENTE_AUSENTE`, `MEDICO_AUSENTE` y `CANCELADA` |
 
 Un pago rechazado permite una operación nueva con otra clave; un reenvío con la misma clave retorna la original. Un pendiente impide otra operación para el mismo plan o retención. Un copago aprobado impide otro cobro para esa retención. Las repeticiones de confirmación retornan la cita original. Las repeticiones de cancelación se rechazan por versión o estado. El registro no se elimina.

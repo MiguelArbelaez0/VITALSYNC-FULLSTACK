@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useParams, Link } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams, Link } from "react-router-dom";
 import {
   CalendarDays,
   Clock3,
@@ -22,8 +22,9 @@ import { Button } from "../../components/ui/button";
 export function Doctors() {
   const [search, setSearch] = useState("");
   const [specialty, setSpecialty] = useState("");
-  const initialModality = new URLSearchParams(window.location.search).get("modality");
-  const [modality, setModality] = useState<Modality>(initialModality === "VIRTUAL" ? "VIRTUAL" : "PRESENCIAL");
+  const [searchParams] = useSearchParams();
+  const initialModality = searchParams.get("modality");
+  const [modality, setModality] = useState<Modality>(initialModality === "PRESENCIAL" ? "PRESENCIAL" : "VIRTUAL");
   const q = useQuery({
     queryKey: ["doctors", search, specialty, modality],
     queryFn: () =>
@@ -47,8 +48,8 @@ export function Doctors() {
       <section className="modality-picker" aria-label="Modalidad de atención">
         <h2>¿Qué modalidad de atención necesitas?</h2>
         <div className="modality-options">
-          <button aria-pressed={modality === "PRESENCIAL"} className={modality === "PRESENCIAL" ? "selected" : ""} onClick={() => setModality("PRESENCIAL")}><MapPin/><span><strong>Cita presencial</strong><small>Atención en sede VITALSYNC</small></span></button>
-          <button aria-pressed={modality === "VIRTUAL"} className={modality === "VIRTUAL" ? "selected" : ""} onClick={() => setModality("VIRTUAL")}><Monitor/><span><strong>Cita virtual</strong><small>Teleconsulta simulada, sin audio ni video</small></span></button>
+          <button aria-pressed={modality === "VIRTUAL"} className={modality === "VIRTUAL" ? "selected recommended-modality" : "recommended-modality"} onClick={() => setModality("VIRTUAL")}><Monitor/><span><strong>Consulta virtual <em>Recomendada</em></strong><small>Teleconsulta virtual simulada, sin audio ni video</small></span></button>
+          <button aria-pressed={modality === "PRESENCIAL"} className={modality === "PRESENCIAL" ? "selected" : ""} onClick={() => setModality("PRESENCIAL")}><MapPin/><span><strong>Consulta presencial</strong><small>Atención en sede VITALSYNC (ficticia)</small></span></button>
         </div>
       </section>
       <div className="filters">
@@ -115,8 +116,12 @@ export function Doctors() {
                   <h2>{d.name}</h2>
                   <p>
                     {modality === "VIRTUAL" ? <Monitor size={15} /> : <MapPin size={15} />}
-                    {modality === "VIRTUAL" ? "Teleconsulta simulada" : "Bogotá · Consulta presencial"}
+                    {modality === "VIRTUAL" ? "Teleconsulta virtual simulada" : "Bogotá · Consulta presencial"}
                   </p>
+                  <div className="doctor-modalities" role="group" aria-label={"Modalidades de " + d.name}>
+                    {d.modalities.includes("VIRTUAL") && <span><Monitor size={14} /> Virtual</span>}
+                    {d.modalities.includes("PRESENCIAL") && <span><MapPin size={14} /> Presencial</span>}
+                  </div>
                   <p className="doctor-summary">
                     Atención cercana y personalizada para tu bienestar.
                   </p>
@@ -134,8 +139,9 @@ export function Doctors() {
 }
 export function DoctorProfile() {
   const { id } = useParams();
-  const initialModality = new URLSearchParams(window.location.search).get("modality");
-  const [modality, setModality] = useState<Modality>(initialModality === "VIRTUAL" ? "VIRTUAL" : "PRESENCIAL");
+  const [searchParams] = useSearchParams();
+  const initialModality = searchParams.get("modality");
+  const [modality, setModality] = useState<Modality>(initialModality === "PRESENCIAL" ? "PRESENCIAL" : "VIRTUAL");
   const navigate = useNavigate();
   const client = useQueryClient();
   const [day, setDay] = useState("");
@@ -157,6 +163,10 @@ export function DoctorProfile() {
   });
   const days = [...new Set(slots.data?.map((s) => dayKey(s.starts_at)))];
   const activeDay = day || days[0] || "";
+  const activePlanDoesNotCover = plan.data?.status === "ACTIVE" && (
+    !plan.data.plan?.specialty_ids?.includes(d.data?.specialty_id ?? -1) ||
+    !plan.data.plan?.modalities?.includes(modality)
+  );
   async function reserve() {
     if (!selected) return;
     setError(null);
@@ -210,8 +220,8 @@ export function DoctorProfile() {
         </section>
         <section className="panel availability-panel">
           <div className="modality-toggle" aria-label="Modalidad de atención">
-            <button aria-pressed={modality === "PRESENCIAL"} className={modality === "PRESENCIAL" ? "selected" : ""} onClick={() => {setModality("PRESENCIAL"); setSelected(null)}}><MapPin size={17}/> Presencial</button>
-            <button aria-pressed={modality === "VIRTUAL"} className={modality === "VIRTUAL" ? "selected" : ""} onClick={() => {setModality("VIRTUAL"); setSelected(null)}}><Monitor size={17}/> Virtual</button>
+            <button disabled={!d.data.modalities?.includes("VIRTUAL")} aria-pressed={modality === "VIRTUAL"} className={modality === "VIRTUAL" ? "selected recommended-modality" : "recommended-modality"} onClick={() => {setModality("VIRTUAL"); setSelected(null)}}><Monitor size={17}/> Virtual · Recomendada</button>
+            <button disabled={!d.data.modalities?.includes("PRESENCIAL")} aria-pressed={modality === "PRESENCIAL"} className={modality === "PRESENCIAL" ? "selected" : ""} onClick={() => {setModality("PRESENCIAL"); setSelected(null)}}><MapPin size={17}/> Presencial</button>
           </div>
           <div className="section-heading">
             <h2>
@@ -234,13 +244,19 @@ export function DoctorProfile() {
               <Link to="/portal/plans">Consultar y activar mi plan →</Link>
             </div>
           )}
-          {plan.data?.status === "ACTIVE" &&
-            (!plan.data.plan?.specialty_ids?.includes(d.data.specialty_id) || !plan.data.plan?.modalities?.includes(modality)) && (
-              <div className="alert error">
-                Tu plan no cubre esta especialidad.{" "}
-                <Link to="/portal/plans">Ver planes</Link>
-              </div>
-            )}
+          {plan.data?.status === "ACTIVE" && !plan.data.plan?.specialty_ids?.includes(d.data.specialty_id) && (
+            <div className="alert error">
+              Tu plan actual no incluye esta especialidad. <Link to="/portal/plans">Ver planes</Link>
+            </div>
+          )}
+          {plan.data?.status === "ACTIVE" && plan.data.plan?.specialty_ids?.includes(d.data.specialty_id) && !plan.data.plan?.modalities?.includes(modality) && (
+            <div className="alert error">
+              {modality === "VIRTUAL"
+                ? "Tu plan actual no incluye consultas virtuales. Puedes cambiar a un plan con esta modalidad."
+                : "Tu plan actual no incluye consultas presenciales. Puedes cambiar a un plan con esta modalidad."}{" "}
+              <Link to="/portal/plans">Ver planes</Link>
+            </div>
+          )}
           {slots.isPending ? (
             <Loading />
           ) : days.length === 0 ? (
@@ -291,7 +307,7 @@ export function DoctorProfile() {
               <ErrorBox error={error} />
               <Button
                 className="full"
-                disabled={!selected || busy}
+                disabled={!selected || busy || activePlanDoesNotCover}
                 onClick={() => void reserve()}
               >
                 {busy
