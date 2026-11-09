@@ -284,8 +284,42 @@ export function AppointmentDetail() {
             </Button>
           </div>
         )}
-        {a.modality === 'VIRTUAL' && a.status === 'CONFIRMED' && (
-          <div className="notice virtual-link"><strong>Teleconsulta simulada</strong><p>Esta experiencia no usa conexión de audio o video.</p><Button asChild><Link to={'/portal/appointments/'+a.id+'/teleconsult'}><Monitor size={17}/>Ver teleconsulta simulada</Link></Button></div>
+        {a.modality === "VIRTUAL" && (
+          <div className="notice virtual-link">
+            <strong>Teleconsulta simulada</strong>
+            {a.status === "CONFIRMED" ? (
+              <>
+                <p>Esta experiencia no usa conexión de audio o video.</p>
+                <Button
+                  className="virtual-teleconsult-button"
+                  asChild
+                >
+                  <Link to={"/portal/appointments/" + a.id + "/teleconsult"}>
+                    <Monitor size={17} />
+                    Ver teleconsulta simulada
+                  </Link>
+                </Button>
+              </>
+            ) : (
+              <>
+                <p>
+                  {a.status === "CANCELLED"
+                    ? "La cita está cancelada; la teleconsulta no está disponible."
+                    : a.status === "ATTENDED"
+                      ? "La cita ya fue atendida; la teleconsulta no está disponible."
+                      : "La teleconsulta estará disponible cuando la cita esté confirmada."}
+                </p>
+                <Button
+                  className="virtual-teleconsult-button"
+                  type="button"
+                  disabled
+                >
+                  <Monitor size={17} />
+                  Ver teleconsulta simulada
+                </Button>
+              </>
+            )}
+          </div>
         )}
       </section>
       <Dialog

@@ -178,7 +178,22 @@ test("Paciente real: registro, login, plan, copago, cita y cancelación", async 
   await page.getByRole("button", { name: "Confirmar cita", exact: true }).click();
   await expect(page.getByRole("heading", { name: "¡Tu cita está confirmada!" })).toBeVisible();
   await expect(page.locator(".receipt")).toContainText("Consulta virtual · Teleconsulta simulada");
-  await page.getByRole("link", { name: "Ver teleconsulta simulada" }).click();
+  const teleconsultLink = page.getByRole("link", { name: "Ver teleconsulta simulada" });
+  const enabledColors = await teleconsultLink.evaluate((element) => ({
+    background: getComputedStyle(element).backgroundColor,
+    text: getComputedStyle(element).color,
+    icon: getComputedStyle(element.querySelector("svg")!).color,
+    radius: getComputedStyle(element).borderRadius,
+  }));
+  expect(enabledColors).toEqual({
+    background: "rgb(18, 119, 132)",
+    text: "rgb(255, 255, 255)",
+    icon: "rgb(255, 255, 255)",
+    radius: "9px",
+  });
+  await teleconsultLink.hover();
+  await expect(teleconsultLink).toHaveCSS("background-color", "rgb(13, 101, 114)");
+  await teleconsultLink.click();
   await expect(page.getByText("Teleconsulta simulada — sin conexión de audio o video")).toBeVisible();
   await page.getByRole("button", { name: /Simular siguiente estado: Sala disponible/ }).click();
   await expect(page.getByText("Sala disponible")).toBeVisible();
@@ -196,6 +211,21 @@ test("Paciente real: registro, login, plan, copago, cita y cancelación", async 
   await page.getByLabel("Confirmo que deseo cancelar mi cita.").check();
   await page.getByRole("button", { name: "Confirmar cancelación" }).click();
   await expect(page.getByText("Cancelada", { exact: true })).toBeVisible();
+  const unavailableTeleconsult = page.getByRole("button", { name: "Ver teleconsulta simulada" });
+  await expect(unavailableTeleconsult).toBeDisabled();
+  await expect(page.getByText("La cita está cancelada; la teleconsulta no está disponible.")).toBeVisible();
+  const disabledColors = await unavailableTeleconsult.evaluate((element) => ({
+    background: getComputedStyle(element).backgroundColor,
+    text: getComputedStyle(element).color,
+    icon: getComputedStyle(element.querySelector("svg")!).color,
+    opacity: getComputedStyle(element).opacity,
+  }));
+  expect(disabledColors).toEqual({
+    background: "rgb(220, 232, 236)",
+    text: "rgb(36, 76, 89)",
+    icon: "rgb(36, 76, 89)",
+    opacity: "1",
+  });
   await page.goto("/portal/plans");
   const standardPlan = page
     .locator(".plan-card")

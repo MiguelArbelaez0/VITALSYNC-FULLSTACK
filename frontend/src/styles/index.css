@@ -873,7 +873,38 @@ form {
 .coverage-exclusion {color:#667e89}
 .appointment-modality-filter {display:flex;align-items:center;gap:12px;width:max-content;margin:12px 0 22px;color:#54717d;font-size:12px}
 .appointment-modality-filter select {min-width:190px;margin:0;font-size:12px}
-.virtual-room {max-width:760px;margin:0 auto}.virtual-room>svg {color:var(--primary);background:#e8f5f5;border-radius:14px;padding:12px;width:65px;height:65px}.virtual-room h2 {margin:17px 0}.virtual-link .btn {margin-top:12px}
+.virtual-room {max-width:760px;margin:0 auto}.virtual-room>svg {color:var(--primary);background:#e8f5f5;border-radius:14px;padding:12px;width:65px;height:65px}.virtual-room h2 {margin:17px 0}
+.virtual-link .virtual-teleconsult-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 12px;
+  border: 1px solid #127784;
+  border-radius: 9px;
+  background: #127784;
+  color: #fff;
+  text-decoration: none;
+  opacity: 1;
+}
+.virtual-link .virtual-teleconsult-button svg {color: inherit}
+.virtual-link .virtual-teleconsult-button:hover:not(:disabled) {
+  background: #0d6572;
+  border-color: #0d6572;
+  color: #fff;
+}
+.virtual-link .virtual-teleconsult-button:focus-visible {
+  outline: 3px solid #0c5565;
+  outline-offset: 3px;
+}
+.virtual-link .virtual-teleconsult-button:disabled {
+  background: #dce8ec;
+  border-color: #c5d7dd;
+  color: #244c59;
+  cursor: not-allowed;
+  opacity: 1;
+  box-shadow: none;
+}
 .filters {
   display: flex;
   gap: 15px;

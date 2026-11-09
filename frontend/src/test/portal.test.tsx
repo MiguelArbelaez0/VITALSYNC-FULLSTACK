@@ -354,6 +354,7 @@ describe("Reserva, comprobante y cancelación", () => {
       if (path === "/appointments/1")
         return respond({
           ...appointment,
+          modality: "VIRTUAL",
           status: cancelled ? "CANCELLED" : "CONFIRMED",
           cancelled_at: cancelled ? "2026-11-08T14:00:00Z" : null,
         });
@@ -368,6 +369,9 @@ describe("Reserva, comprobante y cancelación", () => {
       "/portal/appointments/1",
     );
     expect(await screen.findByText("VS-TEST")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Ver teleconsulta simulada" }),
+    ).toHaveAttribute("href", "/portal/appointments/1/teleconsult");
     await userEvent.click(
       screen.getByRole("button", { name: "Cancelar cita" }),
     );
@@ -392,6 +396,14 @@ describe("Reserva, comprobante y cancelación", () => {
       screen.getByRole("button", { name: "Confirmar cancelación" }),
     );
     expect(await screen.findByText("Cancelada")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Ver teleconsulta simulada" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText(
+        "La cita está cancelada; la teleconsulta no está disponible.",
+      ),
+    ).toBeInTheDocument();
     expect(
       fetch.mock.calls.find((c) => c[0].endsWith("/cancel"))?.[1]?.body,
     ).toContain('"confirmed":true');
