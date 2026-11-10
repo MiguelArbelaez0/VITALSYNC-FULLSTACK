@@ -3,7 +3,7 @@ from zoneinfo import ZoneInfo
 from fastapi import FastAPI, Depends, HTTPException, Request, Response, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from app.core.config import *
@@ -12,7 +12,7 @@ from app.db.session import get_db
 from app.models.entities import *
 from app.schemas.requests import Login, Register, Profile, PaymentInput, Reconcile, HoldInput, Cancel, CancelPlanInput, TeleconsultationStatus
 from app.repositories.queries import *
-from app.services import booking, payments, plans as plan_services
+from app.services import booking, payments, plans as plan_services, teleconsultations
 from app.services import teleconsultation
 
 app = FastAPI(title='VITALSYNC · Portal del paciente', version='1.0.0')
@@ -212,7 +212,10 @@ def cancel_my_plan(data: CancelPlanInput, user=Depends(current_user, scope='func
 
 @app.get('/api/dashboard')
 def dashboard(user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
-    rows = db.execute(appointments_query(user.id).where(Appointment.status.in_(['CONFIRMED','TECHNICAL_ISSUE']), Appointment.starts_at > now()).order_by(Appointment.starts_at)).all()
+    rows = db.execute(appointments_query(user.id).where(
+        Appointment.status.in_(['CONFIRMED', 'IN_PROGRESS', 'TECHNICAL_ERROR']),
+        Appointment.ends_at > now(),
+    ).order_by(Appointment.starts_at)).all()
     unread = len(db.scalars(select(Notification.id).where(Notification.patient_id == user.id, Notification.read == False)).all())
     return dict(name=user.name, plan=my_plan(db, user.id), upcoming_count=len(rows), next_appointment=appointment_dict(*rows[0]) if rows else None, unread_notifications=unread)
 
@@ -290,8 +293,17 @@ def confirm(hold_id: int, user=Depends(current_user, scope='function'), db: Sess
     return {'id': a.id, 'code': a.code, 'status': a.status}
 
 @app.get('/api/appointments')
-def appointments(user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
-    return [appointment_dict(*row) for row in db.execute(appointments_query(user.id).order_by(Appointment.starts_at.desc()))]
+def appointments(view: str = Query('all', pattern='^(all|upcoming|completed|history|cancelled)$'), user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
+    q = appointments_query(user.id)
+    if view == 'upcoming':
+        q = q.where(Appointment.status.in_(['CONFIRMED', 'IN_PROGRESS', 'TECHNICAL_ERROR']), Appointment.ends_at > now())
+    elif view == 'completed':
+        q = q.where(Appointment.status == 'ATTENDED')
+    elif view == 'cancelled':
+        q = q.where(Appointment.status == 'CANCELLED')
+    elif view == 'history':
+        q = q.where(Appointment.status != 'CANCELLED', or_(~Appointment.status.in_(['CONFIRMED', 'IN_PROGRESS', 'TECHNICAL_ERROR']), Appointment.ends_at <= now()))
+    return [appointment_dict(*row) for row in db.execute(q.order_by(Appointment.starts_at.desc()))]
 
 @app.get('/api/appointments/{appointment_id}')
 def appointment(appointment_id: int, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
@@ -303,8 +315,12 @@ def appointment(appointment_id: int, user=Depends(current_user, scope='function'
     result['location'] = 'Sede VITALSYNC Bogotá (ficticia)' if result['modality'] == 'PRESENCIAL' else None
     if result['modality'] == 'VIRTUAL':
         vc = db.get(VirtualConsultation, appointment_id)
+        demo_enabled = DEMO_MODE and teleconsultation.DEMO_MODE
         result['virtual_status'] = teleconsultation.display_status(vc) if vc else 'PROGRAMADA'
-        result['virtual_state'] = teleconsultation.state_dict(db.get(Appointment, appointment_id), vc) if vc else None
+        result['virtual_state'] = teleconsultation.state_dict(db.get(Appointment, appointment_id), vc, demo_enabled) if vc else None
+        result['demo_mode'] = demo_enabled
+        result['patient_present_at'] = vc.patient_present_at if vc else None
+        result['doctor_present_at'] = vc.doctor_present_at if vc else None
     else:
         result['virtual_status'] = None
     result['history'] = db.scalars(select(StatusHistory).where(StatusHistory.appointment_id == appointment_id).order_by(StatusHistory.id)).all()
@@ -312,7 +328,7 @@ def appointment(appointment_id: int, user=Depends(current_user, scope='function'
 
 @app.get('/api/appointments/{appointment_id}/teleconsult')
 def virtual_teleconsult(appointment_id: int, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
-    row = db.execute(appointments_query(user.id).where(Appointment.id == appointment_id, Appointment.modality == 'VIRTUAL')).first()
+    row = db.execute(appointments_query(user.id).where(Appointment.id == appointment_id, Appointment.modality == 'VIRTUAL', Appointment.status != 'CANCELLED')).first()
     if not row:
         raise HTTPException(404, 'Teleconsulta no encontrada o no pertenece a tu cuenta')
     session = db.get(VirtualConsultation, appointment_id)
@@ -322,13 +338,20 @@ def virtual_teleconsult(appointment_id: int, user=Depends(current_user, scope='f
     result['patient'] = user.name
     result['message'] = teleconsultation.PROVIDER.message
     result['virtual_status'] = teleconsultation.display_status(session)
-    result['virtual_state'] = teleconsultation.state_dict(db.get(Appointment, appointment_id), session)
+    demo_enabled = DEMO_MODE and teleconsultation.DEMO_MODE
+    result['virtual_state'] = teleconsultation.state_dict(db.get(Appointment, appointment_id), session, demo_enabled)
+    result['demo_mode'] = demo_enabled
+    result['patient_present_at'] = session.patient_present_at
+    result['doctor_present_at'] = session.doctor_present_at
     return result
 
 @app.post('/api/appointments/{appointment_id}/teleconsult/status')
 def set_virtual_status(appointment_id: int, data: TeleconsultationStatus, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
-    event = data.event or teleconsultation.LEGACY_EVENTS[data.status]
-    return teleconsultation.apply_event(db, user, appointment_id, event, data.reason)
+    if data.event:
+        event = data.event
+        return teleconsultation.apply_event(db, user, appointment_id, event, data.reason, demo_mode=DEMO_MODE and teleconsultation.DEMO_MODE)
+    else:
+        return teleconsultations.transition(db, user, appointment_id, data.status, DEMO_MODE and teleconsultation.DEMO_MODE)
 
 @app.post('/api/appointments/{appointment_id}/cancel')
 def cancel(appointment_id: int, data: Cancel, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):

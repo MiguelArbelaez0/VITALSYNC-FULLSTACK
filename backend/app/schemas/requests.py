@@ -87,7 +87,7 @@ class HoldInput(Input):
 
 class TeleconsultationStatus(Input):
     event: Literal['ADVANCE_DEMO_CLOCK','OPEN_ROOM','PATIENT_JOIN','DOCTOR_JOIN','START','FINALIZE','PATIENT_ABSENT','DOCTOR_ABSENT','TECHNICAL_ERROR','RETRY'] | None = None
-    status: Literal['SALA_DISPONIBLE','PACIENTE_EN_ESPERA','MEDICO_EN_ESPERA','EN_ATENCION','FINALIZADA','PACIENTE_AUSENTE','MEDICO_AUSENTE'] | None = None
+    status: Literal['SALA_DISPONIBLE','PACIENTE_EN_ESPERA','MEDICO_EN_ESPERA','EN_ATENCION','FINALIZADA','PACIENTE_AUSENTE','MEDICO_AUSENTE','ERROR_TECNICO'] | None = None
     reason: str | None = Field(default=None, max_length=300)
 
     @model_validator(mode='after')

@@ -5,6 +5,7 @@ from app.models.entities import now
 def register_patient(vc, timestamp=None):
     vc.patient_present = True
     vc.patient_joined_at = timestamp or now()
+    vc.patient_present_at = vc.patient_joined_at
     if vc.status == 'SALA_DISPONIBLE':
         vc.status = 'EN_ESPERA'
 
@@ -12,6 +13,7 @@ def register_patient(vc, timestamp=None):
 def register_doctor(vc, timestamp=None):
     vc.doctor_present = True
     vc.doctor_joined_at = timestamp or now()
+    vc.doctor_present_at = vc.doctor_joined_at
     if vc.status == 'SALA_DISPONIBLE':
         vc.status = 'EN_ESPERA'
 

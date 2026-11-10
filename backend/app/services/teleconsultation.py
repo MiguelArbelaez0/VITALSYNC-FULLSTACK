@@ -21,6 +21,7 @@ LEGACY_EVENTS = {
     'FINALIZADA': 'FINALIZE',
     'PACIENTE_AUSENTE': 'PATIENT_ABSENT',
     'MEDICO_AUSENTE': 'DOCTOR_ABSENT',
+    'ERROR_TECNICO': 'TECHNICAL_ERROR',
 }
 DEMO_EVENTS = {'ADVANCE_DEMO_CLOCK','DOCTOR_JOIN','START','FINALIZE','PATIENT_ABSENT','DOCTOR_ABSENT','TECHNICAL_ERROR','RETRY'}
 
@@ -29,43 +30,47 @@ def display_status(vc):
     return attendance.display_status(vc)
 
 
-def available_actions(appointment, vc):
+def available_actions(appointment, vc, demo_mode=None):
+    demo_mode = DEMO_MODE if demo_mode is None else demo_mode
     current = now()
     window_open = current >= appointment.starts_at - timedelta(minutes=TELECONSULT_ROOM_OPEN_MINUTES)
-    if DEMO_MODE and vc.demo_clock_advanced_at:
+    if demo_mode and vc.demo_clock_advanced_at:
         window_open = True
     if appointment.status in ('ATTENDED','CANCELLED','PATIENT_ABSENT','DOCTOR_ABSENT'):
         return []
-    if appointment.status == 'TECHNICAL_ISSUE' or vc.status == 'ERROR_TECNICO':
-        return ['RETRY'] if DEMO_MODE else []
+    if appointment.status == 'TECHNICAL_ERROR' or vc.status == 'ERROR_TECNICO':
+        return ['RETRY'] if demo_mode else []
     if vc.status == 'PROGRAMADA':
-        actions = ['ADVANCE_DEMO_CLOCK'] if DEMO_MODE and not window_open else []
+        actions = ['ADVANCE_DEMO_CLOCK'] if demo_mode and not window_open else []
         if window_open:
             actions.append('OPEN_ROOM')
+        if demo_mode:
+            actions.append('TECHNICAL_ERROR')
         return actions
     if vc.status == 'SALA_DISPONIBLE' or vc.status == 'EN_ESPERA':
         actions = []
         if not vc.patient_present:
             actions.append('PATIENT_JOIN')
-        if DEMO_MODE and not vc.doctor_present:
+        if demo_mode and not vc.doctor_present:
             actions.append('DOCTOR_JOIN')
         grace_elapsed = current >= appointment.starts_at + timedelta(minutes=TELECONSULT_WAIT_GRACE_MINUTES)
-        if DEMO_MODE and (grace_elapsed or vc.demo_clock_advanced_at):
+        if demo_mode and (grace_elapsed or vc.demo_clock_advanced_at):
             if not vc.patient_present:
                 actions.append('PATIENT_ABSENT')
             if not vc.doctor_present:
                 actions.append('DOCTOR_ABSENT')
-        if DEMO_MODE and vc.patient_present and vc.doctor_present:
+        if demo_mode and vc.patient_present and vc.doctor_present:
             actions.append('START')
-        if DEMO_MODE:
+        if demo_mode:
             actions.append('TECHNICAL_ERROR')
         return actions
     if vc.status == 'EN_ATENCION':
-        return ['FINALIZE','TECHNICAL_ERROR'] if DEMO_MODE else []
+        return ['FINALIZE','TECHNICAL_ERROR'] if demo_mode else []
     return []
 
 
-def state_dict(appointment, vc):
+def state_dict(appointment, vc, demo_mode=None):
+    demo_mode = DEMO_MODE if demo_mode is None else demo_mode
     return {
         'status': display_status(vc), 'lifecycle_status': vc.status,
         'patient_present': vc.patient_present, 'doctor_present': vc.doctor_present,
@@ -74,14 +79,15 @@ def state_dict(appointment, vc):
         'finalized_at': vc.finalized_at, 'demo_clock_advanced': bool(vc.demo_clock_advanced_at),
         'incident_reason': vc.incident_reason, 'incident_at': vc.incident_at,
         'incident_resolved_at': vc.incident_resolved_at,
-        'available_actions': available_actions(appointment, vc),
+        'available_actions': available_actions(appointment, vc, demo_mode),
         'room_open_minutes': TELECONSULT_ROOM_OPEN_MINUTES,
         'wait_grace_minutes': TELECONSULT_WAIT_GRACE_MINUTES,
-        'demo_mode': DEMO_MODE, 'provider': PROVIDER.name,
+        'demo_mode': demo_mode, 'provider': PROVIDER.name,
     }
 
 
-def apply_event(db, user, appointment_id, event, reason=None):
+def apply_event(db, user, appointment_id, event, reason=None, demo_mode=None, legacy_status=None):
+    demo_mode = DEMO_MODE if demo_mode is None else demo_mode
     booking.lock_patient(db, user.id)
     appointment = db.scalar(select(Appointment).where(
         Appointment.id == appointment_id, Appointment.patient_id == user.id,
@@ -92,9 +98,16 @@ def apply_event(db, user, appointment_id, event, reason=None):
     vc = db.scalar(select(VirtualConsultation).where(VirtualConsultation.appointment_id == appointment_id).with_for_update())
     if not vc or vc.patient_id != user.id or vc.doctor_id != appointment.doctor_id:
         raise HTTPException(404, 'Teleconsulta no encontrada o no pertenece a tu cuenta')
-    if event in DEMO_EVENTS and not DEMO_MODE:
+    if legacy_status and not demo_mode:
+        raise HTTPException(403, 'La simulación está deshabilitada fuera de DEMO_MODE; requiere atención clínica autorizada')
+    if event in DEMO_EVENTS and not demo_mode:
         raise HTTPException(403, 'Esta acción simulada solo está disponible en el modo de demostración')
-    if event not in available_actions(appointment, vc):
+    if legacy_status == 'SALA_DISPONIBLE' and event == 'OPEN_ROOM' and demo_mode and not vc.demo_clock_advanced_at:
+        # Backward-compatible demo transition: the legacy endpoint's explicit room-open request
+        # advances only the virtual clock, never the reserved appointment timestamp.
+        vc.demo_clock_advanced_at = now()
+        db.add(AuditEvent(actor_id=user.id, action='SIMULATED_TELECONSULT_ADVANCE_DEMO_CLOCK', entity_id=appointment_id))
+    if event not in available_actions(appointment, vc, demo_mode):
         raise HTTPException(409, 'La acción no está disponible para el estado o la hora actual de la cita')
 
     timestamp = now()
@@ -120,7 +133,7 @@ def apply_event(db, user, appointment_id, event, reason=None):
         vc.status = 'FINALIZADA'
         vc.finalized_at = timestamp
         appointment_lifecycle.finalize(appointment, timestamp)
-        message = 'Teleconsulta simulada finalizada correctamente.'
+        message = 'Atención simulada finalizada correctamente. No hubo atención médica real.'
     elif event in ('PATIENT_ABSENT','DOCTOR_ABSENT'):
         absent = 'PACIENTE_AUSENTE' if event == 'PATIENT_ABSENT' else 'MEDICO_AUSENTE'
         absence_reason = reason or ('El paciente no ingresó dentro del plazo de espera.' if event == 'PATIENT_ABSENT' else 'El médico no ingresó dentro del plazo de espera; ausencia simulada.')
@@ -147,12 +160,13 @@ def apply_event(db, user, appointment_id, event, reason=None):
         message = 'La incidencia se resolvió y la sesión simulada quedó lista para continuar.'
 
     vc.updated_at = timestamp
-    db.add(AuditEvent(actor_id=user.id, action='SIMULATED_TELECONSULT_' + event, entity_id=appointment_id))
-    db.add(StatusHistory(appointment_id=appointment_id, status='VIRTUAL_' + vc.status, author_id=user.id, reason=message))
+    history_reason = f'DEMOSTRACIÓN · Cita {appointment.code} · {message}'
+    db.add(AuditEvent(actor_id=user.id, action='SIMULATED_TELECONSULT_' + (legacy_status or event), entity_id=appointment_id))
+    db.add(StatusHistory(appointment_id=appointment_id, status='VIRTUAL_' + vc.status, author_id=user.id, reason=history_reason))
     if event in {'START','FINALIZE','PATIENT_ABSENT','DOCTOR_ABSENT','TECHNICAL_ERROR','RETRY'}:
-        db.add(StatusHistory(appointment_id=appointment_id, status=appointment.status, author_id=user.id, reason=message))
+        db.add(StatusHistory(appointment_id=appointment_id, status=appointment.status, author_id=user.id, reason=history_reason))
     if event in {'FINALIZE','PATIENT_ABSENT','DOCTOR_ABSENT','TECHNICAL_ERROR','RETRY'}:
         notification_service.lifecycle_update(db, user.id, appointment.code, message)
     db.flush()
-    state = state_dict(appointment, vc)
-    return {'appointment_id': appointment_id, 'appointment_status': appointment.status, 'state': state, 'status': state['status'], 'message': message}
+    state = state_dict(appointment, vc, demo_mode)
+    return {'appointment_id': appointment_id, 'appointment_status': appointment.status, 'completion_source': appointment.completion_source, 'simulated_completed_at': appointment.simulated_completed_at, 'clinically_attended': appointment.clinically_attended, 'state': state, 'status': state['status'], 'message': message}

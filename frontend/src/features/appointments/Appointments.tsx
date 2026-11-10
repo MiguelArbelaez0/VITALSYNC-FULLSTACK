@@ -24,29 +24,32 @@ import { Dialog } from "../../components/ui/dialog";
 export function Appointments() {
   const [tab, setTab] = useState("upcoming");
   const [modalityFilter, setModalityFilter] = useState<"ALL" | Modality>("ALL");
+  const views: Record<string, string> = { upcoming: "upcoming", completed: "completed", history: "history", cancelled: "cancelled" };
   const q = useQuery({
-    queryKey: ["appointments"],
-    queryFn: () => api<Appointment[]>("/appointments"),
+    queryKey: ["appointments", tab],
+    queryFn: () => api<Appointment[]>("/appointments?view=" + (views[tab] ?? "all")),
   });
   const items = q.data
     ?.filter((a) =>
       (modalityFilter === "ALL" || a.modality === modalityFilter) &&
       (tab === "cancelled"
         ? a.status === "CANCELLED"
-        : tab === "finalized"
+        : tab === "completed" || tab === "finalized"
           ? a.status === "ATTENDED"
           : tab === "incidents"
-            ? ["PATIENT_ABSENT", "DOCTOR_ABSENT", "TECHNICAL_ISSUE"].includes(a.status)
+            ? ["PATIENT_ABSENT", "DOCTOR_ABSENT", "TECHNICAL_ERROR"].includes(a.status)
             : tab === "in_progress"
               ? a.status === "IN_PROGRESS"
-              : ["CONFIRMED", "TECHNICAL_ISSUE"].includes(a.status) && new Date(a.starts_at) > new Date()),
+              : tab === "history"
+                ? a.status !== "CANCELLED" &&
+                  (!["CONFIRMED", "IN_PROGRESS", "TECHNICAL_ERROR"].includes(a.status) || new Date(a.ends_at) <= new Date())
+                : ["CONFIRMED", "TECHNICAL_ERROR"].includes(a.status) && new Date(a.starts_at) > new Date()),
     )
     .sort((a, b) =>
       tab === "upcoming"
         ? a.starts_at.localeCompare(b.starts_at)
         : b.starts_at.localeCompare(a.starts_at),
-    );
-  return (
+    );  return (
     <>
       <PageTitle
         title="Tu agenda, en sintonía"
@@ -57,7 +60,8 @@ export function Appointments() {
         {[
           ["upcoming", "Próximas citas"],
           ["in_progress", "En atención"],
-          ["finalized", "Finalizadas"],
+          ["history", "Historial"],
+          ["completed", "Historial · Finalizadas"],
           ["cancelled", "Historial · Canceladas"],
           ["incidents", "Ausencias e incidencias"],
         ].map(([key, label]) => (
@@ -92,8 +96,10 @@ export function Appointments() {
           title={
             tab === "cancelled"
               ? "No tienes citas canceladas"
-              : tab === "finalized"
+              : tab === "completed" || tab === "finalized"
                 ? "No tienes citas finalizadas"
+              : tab === "history"
+                ? "Tu historial aparecerá aquí"
                 : tab === "in_progress"
                   ? "No tienes citas en atención"
                   : tab === "incidents"
@@ -124,10 +130,11 @@ export function Appointments() {
                 </span>
               </div>
               <div className="appointment-primary">
-                <Badge status={a.status} />
+                <Badge status={a.completion_source === "DEMO" ? "DEMO_COMPLETED" : a.status} />
                 <h2>{a.doctor}</h2>
                 <p>{a.specialty}</p>
                 <small>{a.code}</small>
+                {a.simulated_completed_at && <p>Simulación: {dateText(a.simulated_completed_at)} · {timeText(a.simulated_completed_at)}. No hubo atención médica real.</p>}
               </div>
               <div className="appointment-meta">
                 <span>
@@ -218,7 +225,7 @@ export function AppointmentDetail() {
             <h2>{a.doctor}</h2>
             <p>{a.specialty}</p>
           </div>
-          <Badge status={a.status} />
+          <Badge status={a.completion_source === "DEMO" ? "DEMO_COMPLETED" : a.status} />
         </div>
         <dl>
           <div>
@@ -252,6 +259,7 @@ export function AppointmentDetail() {
             <dd>{a.modality === 'VIRTUAL' ? 'Consulta virtual · Teleconsulta simulada' : 'Consulta presencial · Sede VITALSYNC Bogotá (ficticia)'}</dd>
           </div>
         </dl>
+        {a.simulated_completed_at && <p className="notice">Finalizada (simulación) · {dateText(a.simulated_completed_at)} · {timeText(a.simulated_completed_at)}. No hubo atención médica real.</p>}
         {a.status === "CANCELLED" && (
           <div className="notice">
             <strong>Cita cancelada el {dateText(a.cancelled_at!)}</strong>
@@ -270,7 +278,7 @@ export function AppointmentDetail() {
             {a.history.map((h) => (
               <p key={h.id}>
                 <span className="live-dot" />
-                {statuses[h.status]} · {dateText(h.created_at)} · {h.reason}
+                {statuses[h.status] ?? statuses[h.status.replace("VIRTUAL_", "")] ?? h.status} · {dateText(h.created_at)} · {timeText(h.created_at)} · {h.reason}
               </p>
             ))}
           </div>
@@ -296,7 +304,7 @@ export function AppointmentDetail() {
         {a.modality === "VIRTUAL" && (
           <div className="notice virtual-link">
             <strong>Teleconsulta simulada</strong>
-            {["CONFIRMED", "IN_PROGRESS", "TECHNICAL_ISSUE"].includes(a.status) ? (
+            {["CONFIRMED", "IN_PROGRESS", "TECHNICAL_ERROR"].includes(a.status) ? (
               <>
                 <p>Esta experiencia no usa conexión de audio o video.</p>
                 <Button
@@ -314,11 +322,25 @@ export function AppointmentDetail() {
                 <p>
                   {a.status === "CANCELLED"
                     ? "La cita está cancelada; la teleconsulta no está disponible."
+                    : a.completion_source === "DEMO"
+                      ? "La simulación ha finalizado; consulta el registro de la cita."
+                    : ["PATIENT_ABSENT", "DOCTOR_ABSENT", "TECHNICAL_ERROR"].includes(a.status)
+                      ? "La teleconsulta terminó con una incidencia; no se registró una atención finalizada."
                     : a.status === "ATTENDED"
                       ? "Atención finalizada en modo demostración. Consulta el historial de la cita."
                       : "La teleconsulta estará disponible cuando la cita esté confirmada."}
                 </p>
-                {a.status === "ATTENDED" ? <Button className="virtual-teleconsult-button" asChild><Link to={"/portal/appointments/" + a.id + "/teleconsult"}><Monitor size={17} />Ver historial de mi cita</Link></Button> : <Button className="virtual-teleconsult-button" type="button" disabled><Monitor size={17} />Ver teleconsulta simulada</Button>}
+                {a.status === "ATTENDED" ? (
+                  <Button className="virtual-teleconsult-button" asChild>
+                    <Link to={"/portal/appointments/" + a.id + "/teleconsult"}>
+                      <Monitor size={17} />Ver historial de cita
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button className="virtual-teleconsult-button" type="button" disabled>
+                    <Monitor size={17} />Ver teleconsulta simulada
+                  </Button>
+                )}
               </>
             )}
           </div>
@@ -451,6 +473,8 @@ export function Teleconsultation() {
     PACIENTE_AUSENTE: "La cita se cerró por ausencia del paciente y permanece en el historial.",
     MEDICO_AUSENTE: "La ausencia médica quedó registrada; no se marcó como atención finalizada.",
   };
+  const patientPresent = virtual?.patient_present ?? Boolean(a.patient_present_at);
+  const doctorPresent = virtual?.doctor_present ?? Boolean(a.doctor_present_at);
   return (
     <>
       <Link className="text-link back-link" to={"/portal/appointments/" + id}>
@@ -464,10 +488,8 @@ export function Teleconsultation() {
       <section className="panel virtual-room">
         <Monitor size={50} />
         <h2>Sin conexión de audio o video</h2>
-        <div className="alert success">
-          Teleconsulta simulada — sin conexión de audio o video
-        </div>
-        <Badge status={status} />
+        <div className="alert success">Teleconsulta simulada — sin conexión de audio o video</div>
+        <Badge status={a.completion_source === "DEMO" ? "DEMO_COMPLETED" : status} />
         <p role="status">{stateExplanation[status] ?? "Consulta el estado persistido de esta sesión."}</p>
         <dl>
           <div><dt>Paciente</dt><dd>{a.patient}</dd></div>
@@ -475,21 +497,22 @@ export function Teleconsultation() {
           <div><dt>Especialidad</dt><dd>{a.specialty}</dd></div>
           <div><dt>Fecha</dt><dd>{dateText(a.starts_at)}</dd></div>
           <div><dt>Hora</dt><dd>{timeText(a.starts_at)} · Bogotá</dd></div>
-          <div><dt>Estado de la cita</dt><dd>{statuses[a.status]}</dd></div>
-          <div><dt>Presencia del paciente</dt><dd>{virtual?.patient_present ? "Presente" : "Aún no ha ingresado"}</dd></div>
-          <div><dt>Presencia del médico</dt><dd>{virtual?.doctor_present ? "Presente" : "Aún no ha ingresado"}</dd></div>
-          {virtual?.finalized_at && <div><dt>Finalizada</dt><dd>{dateText(virtual.finalized_at)} · {timeText(virtual.finalized_at)}</dd></div>}
+          <div><dt>Estado de la cita</dt><dd>{a.completion_source === "DEMO" ? "Finalizada (simulación)" : statuses[a.status]}</dd></div>
+          <div><dt>Presencia del paciente</dt><dd>{patientPresent ? "Presente" : "Aún no ha ingresado"}</dd></div>
+          <div><dt>Presencia del médico</dt><dd>{doctorPresent ? "Presente" : "Aún no ha ingresado"}</dd></div>
+          {(virtual?.finalized_at ?? a.simulated_completed_at) && <div><dt>Finalizada</dt><dd>{dateText((virtual?.finalized_at ?? a.simulated_completed_at)!)} · {timeText((virtual?.finalized_at ?? a.simulated_completed_at)!)}</dd></div>}
         </dl>
         <p>La simulación no conecta audio ni video y no acredita atención médica real. La sala abre {virtual?.room_open_minutes ?? 5} minutos antes de la cita; el plazo de espera es {virtual?.wait_grace_minutes ?? 15} minutos.</p>
         {virtual?.demo_clock_advanced && <p>Reloj demostrativo avanzado. La fecha y hora reservadas no se modificaron.</p>}
         {virtual?.incident_reason && <p role="status">{virtual.incident_reason}</p>}
-        {virtual?.lifecycle_status === "FINALIZADA" && <div className="alert success">Atención finalizada en modo demostración. Teleconsulta simulada finalizada correctamente.</div>}
+        {a.completion_source === "DEMO" && <div className="alert success">Atención finalizada en modo demostración. No hubo atención médica real.</div>}
+        {a.demo_mode === false && !virtual?.available_actions?.length && <p>La simulación está deshabilitada fuera del modo demostración.</p>}
         {!terminal && (virtual?.available_actions ?? []).map((action) => (
           <Button key={action} variant={action === "FINALIZE" ? "default" : "outline"} disabled={busy} onClick={() => void advance(action)}>
             {actionLabels[action] ?? action}
           </Button>
         ))}
-        {terminal && <Button asChild variant="outline"><Link to={"/portal/appointments/" + id}>Ver historial de mi cita</Link></Button>}
+        {terminal && <Button asChild variant="outline"><Link to={"/portal/appointments/" + id}>Ver historial de cita</Link></Button>}
         <ErrorBox error={error} />
       </section>
     </>

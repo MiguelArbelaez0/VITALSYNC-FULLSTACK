@@ -45,7 +45,7 @@ def available(db, slot, patient_id=None, exclude_hold=None):
     if patient_id:
         appointment_filter = or_(appointment_filter, Appointment.patient_id == patient_id)
         hold_filter = or_(hold_filter, Hold.patient_id == patient_id)
-    if db.scalar(select(Appointment.id).where(appointment_filter, Appointment.status.in_(['CONFIRMED','IN_PROGRESS','TECHNICAL_ISSUE']), overlaps(Appointment, slot.starts_at, slot.ends_at)).limit(1)):
+    if db.scalar(select(Appointment.id).where(appointment_filter, Appointment.status.in_(['CONFIRMED', 'IN_PROGRESS', 'TECHNICAL_ERROR']), overlaps(Appointment, slot.starts_at, slot.ends_at)).limit(1)):
         return False
     q = select(Hold.id).where(hold_filter, Hold.status == 'ACTIVE', Hold.expires_at > now(), overlaps(Hold, slot.starts_at, slot.ends_at))
     if exclude_hold:

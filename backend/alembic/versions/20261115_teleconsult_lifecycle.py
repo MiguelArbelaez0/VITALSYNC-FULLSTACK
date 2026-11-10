@@ -29,10 +29,20 @@ def upgrade():
     ]:
         op.add_column('virtual_consultations', column)
 
-    op.drop_constraint('appointments_status_check', 'appointments', type_='check')
+    for check in sa.inspect(op.get_bind()).get_check_constraints('appointments'):
+        sql = (check.get('sqltext') or '').lower()
+        if check.get('name') in {'appointments_status_check', 'ck_appointments_status'} or (
+            'status' in sql and 'confirmed' in sql and 'cancelled' in sql and 'completion_source' not in sql
+        ):
+            op.drop_constraint(check['name'], 'appointments', type_='check')
     op.create_check_constraint('appointments_status_check', 'appointments',
-        "status IN ('CONFIRMED','IN_PROGRESS','CANCELLED','ATTENDED','PATIENT_ABSENT','DOCTOR_ABSENT','TECHNICAL_ISSUE')")
-    op.drop_constraint('ck_virtual_consultations_status', 'virtual_consultations', type_='check')
+        "status IN ('CONFIRMED','IN_PROGRESS','CANCELLED','ATTENDED','PATIENT_ABSENT','DOCTOR_ABSENT','TECHNICAL_ISSUE','TECHNICAL_ERROR')")
+    for check in sa.inspect(op.get_bind()).get_check_constraints('virtual_consultations'):
+        sql = (check.get('sqltext') or '').lower()
+        if check.get('name') in {'ck_virtual_consultations_status', 'ck_virtual_status'} or (
+            'programada' in sql and 'status' in sql
+        ):
+            op.drop_constraint(check['name'], 'virtual_consultations', type_='check')
 
     # Translate legacy presentation states while retaining participant presence.
     op.execute("""
@@ -47,7 +57,7 @@ def upgrade():
           status = CASE WHEN status IN ('PACIENTE_EN_ESPERA','MEDICO_EN_ESPERA') THEN 'EN_ESPERA' ELSE status END
     """)
     op.create_check_constraint('ck_virtual_consultations_status', 'virtual_consultations',
-        "status IN ('PROGRAMADA','SALA_DISPONIBLE','EN_ESPERA','EN_ATENCION','FINALIZADA','PACIENTE_AUSENTE','MEDICO_AUSENTE','ERROR_TECNICO','CANCELADA')")
+        "status IN ('PROGRAMADA','SALA_DISPONIBLE','PACIENTE_EN_ESPERA','MEDICO_EN_ESPERA','EN_ESPERA','EN_ATENCION','FINALIZADA','PACIENTE_AUSENTE','MEDICO_AUSENTE','ERROR_TECNICO','CANCELADA')")
     op.execute("""
         CREATE TEMP TABLE teleconsult_reconciled_ids ON COMMIT DROP AS
         SELECT a.id FROM appointments a JOIN virtual_consultations v ON v.appointment_id = a.id
@@ -83,8 +93,8 @@ def upgrade():
     """)
     op.execute("ALTER TABLE appointments DROP CONSTRAINT IF EXISTS no_doctor_overlap")
     op.execute("ALTER TABLE appointments DROP CONSTRAINT IF EXISTS no_patient_overlap")
-    op.execute("ALTER TABLE appointments ADD CONSTRAINT no_doctor_overlap EXCLUDE USING gist (doctor_id WITH =, tstzrange(starts_at, ends_at, '[)') WITH &&) WHERE (status IN ('CONFIRMED','IN_PROGRESS','TECHNICAL_ISSUE'))")
-    op.execute("ALTER TABLE appointments ADD CONSTRAINT no_patient_overlap EXCLUDE USING gist (patient_id WITH =, tstzrange(starts_at, ends_at, '[)') WITH &&) WHERE (status IN ('CONFIRMED','IN_PROGRESS','TECHNICAL_ISSUE'))")
+    op.execute("ALTER TABLE appointments ADD CONSTRAINT no_doctor_overlap EXCLUDE USING gist (doctor_id WITH =, tstzrange(starts_at, ends_at, '[)') WITH &&) WHERE (status IN ('CONFIRMED','IN_PROGRESS','TECHNICAL_ISSUE','TECHNICAL_ERROR'))")
+    op.execute("ALTER TABLE appointments ADD CONSTRAINT no_patient_overlap EXCLUDE USING gist (patient_id WITH =, tstzrange(starts_at, ends_at, '[)') WITH &&) WHERE (status IN ('CONFIRMED','IN_PROGRESS','TECHNICAL_ISSUE','TECHNICAL_ERROR'))")
 
 
 def downgrade():

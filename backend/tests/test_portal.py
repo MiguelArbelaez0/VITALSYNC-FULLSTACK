@@ -673,6 +673,7 @@ def test_virtual_room_state_transitions_and_access_control(patient):
     assert patient.get(f'/api/appointments/{aid}/teleconsult').json()['virtual_status']=='FINALIZADA'
     with SessionLocal() as db:
         assert db.get(VirtualConsultation,aid).status=='FINALIZADA'
+        assert db.get(Appointment,aid).status=='ATTENDED'
 
 def test_virtual_absence_outcomes_are_available_only_at_allowed_steps(patient):
     activate(patient,'Premium')
@@ -707,7 +708,7 @@ def test_virtual_presence_gates_start_and_technical_error_can_recover(patient):
     assert post('DOCTOR_JOIN').status_code==200
     assert post('START').json()['appointment_status']=='IN_PROGRESS'
     incident=post('TECHNICAL_ERROR')
-    assert incident.status_code==200 and incident.json()['appointment_status']=='TECHNICAL_ISSUE'
+    assert incident.status_code==200 and incident.json()['appointment_status']=='TECHNICAL_ERROR'
     restored=post('RETRY')
     assert restored.status_code==200 and restored.json()['appointment_status']=='IN_PROGRESS'
     assert post('FINALIZE').json()['appointment_status']=='ATTENDED'
