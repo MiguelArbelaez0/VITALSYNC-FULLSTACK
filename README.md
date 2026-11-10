@@ -47,7 +47,7 @@ El seed crea un administrador ficticio (`admin@vitalsync.demo` / `AdminDemo2026!
 - Pagar copago cuando corresponda, simular rechazo, pendiente o conciliación y resolver el pendiente antes de reintentar.
 - Confirmar transaccionalmente, consultar e imprimir el comprobante desde el navegador.
 - Consultar Mis citas, detalle, historial y canceladas; cancelar con motivo, confirmación expresa y control de versión.
-- Abrir una teleconsulta simulada para ver y cambiar estados de demostración guardados; no se conecta audio ni video.
+- Gestionar el ciclo de vida de una teleconsulta simulada: abrir sala, registrar presencias independientes, iniciar/finalizar, reportar ausencias y recuperar incidencias técnicas; no se conecta audio ni video.
 - Leer notificaciones guardadas en PostgreSQL.
 
 Las retenciones no son citas. Los pagos pendientes no activan planes ni confirman citas. La cancelación de un plan es inmediata porque estos planes no tienen renovación automática: termina la cobertura para nuevas reservas, conserva citas, pagos e historial, y registra titular, plan, transición, fecha y auditoría. Los pagos pendientes o retenciones activas deben resolverse antes. No se genera una devolución automática.
@@ -115,6 +115,8 @@ Sesiones opacas aleatorias en cookie `HttpOnly`, `SameSite=Strict`; en la BD sol
 | `DEMO_MODE` | `true` en Compose | Seed y controles de pago simulado; fuera de Compose el backend predetermina `false` |
 | `HOLD_MINUTES` | `10` | Duración de retención |
 | `CANCELLATION_HOURS` | `2` | Se exige cancelar con **más** de 2 horas de anticipación |
+| `TELECONSULT_ROOM_OPEN_MINUTES` | `5` | Minutos antes de la cita para habilitar la sala virtual |
+| `TELECONSULT_WAIT_GRACE_MINUTES` | `15` | Plazo de espera usado para registrar ausencias en demostración |
 | `SESSION_HOURS` | `12` | Vigencia de sesión |
 | `COOKIE_SECURE` | `false` | Cookie HTTPS cuando es `true` |
 
@@ -129,6 +131,7 @@ El backend ejecuta `alembic upgrade head` al arrancar y luego `python -m app.see
 3. `20261109_virtual`: modalidades virtual/presencial con registros antiguos conservados como presenciales y cobertura de planes actualizada.
 4. `20261110_virtual_history`: amplía el historial para guardar transiciones de la sala virtual simulada.
 5. `20261114_patient_identity`: añade estado y fecha de creación de cuentas, aceptación versionada del aviso y documento nullable con formato y unicidad para CC. Las cuentas anteriores conservan sus valores nulos.
+6. `20261115_teleconsult_lifecycle`: agrega presencias y marcas de tiempo; reconcilia la cita con su teleconsulta ligada por `appointment_id`; conserva el historial y amplía estados cancelables/bloqueos de agenda.
 
 Se crean 5 especialidades, 5 médicos, 3 planes, un paciente sin plan y el administrador. Se publican los siguientes 21 días, con 6 turnos diarios por médico, y se registra un bloqueo de demostración a las 11:00 del día siguiente. Todos los turnos duran 30 minutos y tienen autoría administrativa. Las fechas se calculan en `America/Bogota`, se persisten y no se generan aleatoriamente en las consultas. Reiniciar no duplica turnos ni sobrescribe datos existentes.
 

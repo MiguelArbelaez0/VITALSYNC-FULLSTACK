@@ -70,13 +70,13 @@ El comprobante especifica **Presencial** con la sede ficticia, o **Virtual · Te
 
 ## 8.1 Sala de teleconsulta simulada
 
-En una cita virtual confirmada, pulsa **Ver teleconsulta simulada** desde el comprobante. La sala muestra paciente, médico, especialidad, fecha, hora y el estado guardado en PostgreSQL. **Simular siguiente estado** avanza de forma secuencial por los estados de demostración; cada cambio queda en el historial de la cita. La cuenta debe ser la paciente propietaria de la cita. Una cita virtual se puede cancelar conforme a la misma política horaria y deja de permitir acceso a la sala.
+En una cita virtual confirmada, pulsa **Ver teleconsulta simulada** desde el comprobante. La sala abre cinco minutos antes de la cita; en modo demostración puedes avanzar el reloj académico sin alterar la fecha reservada. Registra por separado la presencia del paciente y del médico (pueden ingresar en cualquier orden), y solo inicia la atención simulada cuando ambos estén presentes. Finalizar actualiza la cita y la teleconsulta en una transacción, crea historial, auditoría y notificación, y mueve la cita a **Finalizadas**. En la sala se registran también las ausencias y las incidencias técnicas recuperables. Los cambios permanecen en PostgreSQL y se invalida dashboard, detalle, citas y notificaciones. La cuenta debe ser la paciente propietaria de la cita.
 
 La sala no conecta audio ni video, no pide permisos del dispositivo y no genera enlaces ni atiende consultas médicas reales.
 
 ## 9. Mis citas
 
-Entra en **Mis citas**, ruta `/portal/appointments`. La pestaña **Próximas citas** muestra las citas futuras confirmadas; **Ver detalle** abre su comprobante. **Historial** contiene consultas anteriores no canceladas. El dashboard muestra ahora el conteo y la próxima cita consultados al backend.
+Entra en **Mis citas**, ruta `/portal/appointments`. Sus pestañas organizan las citas próximas, en atención, finalizadas, canceladas y con ausencias o incidencias. Al finalizar una consulta, deja de aparecer en **Próximas citas** y se conserva en **Finalizadas** con su comprobante y marcas de tiempo. El dashboard muestra la siguiente cita futura elegible, si existe.
 
 Recarga la página para comprobar que el estado proviene de la base y no de un arreglo de React.
 

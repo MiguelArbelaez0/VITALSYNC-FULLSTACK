@@ -228,7 +228,8 @@ describe("Datos, estados y disponibilidad", () => {
     expect(await screen.findByText("Hola, Valentina 👋")).toBeInTheDocument();
     expect(screen.getByText("03")).toBeInTheDocument();
     expect(screen.getByText("Sin activar")).toBeInTheDocument();
-    expect(screen.getByText("Agendar mi primera cita")).toBeInTheDocument();
+    expect(screen.getByText("No tienes próximas citas programadas")).toBeInTheDocument();
+    expect(screen.getByText("Agendar una cita")).toBeInTheDocument();
   });
   it("muestra carga y error del servicio", async () => {
     mockApi({}, (path) =>
@@ -320,6 +321,7 @@ describe("Reserva, comprobante y cancelación", () => {
           ...appointment,
           modality: "VIRTUAL",
           virtual_status: "PROGRAMADA",
+          virtual_state: { status: "PROGRAMADA", lifecycle_status: "PROGRAMADA", patient_present: false, doctor_present: false, demo_clock_advanced: false, available_actions: ["OPEN_ROOM"], room_open_minutes: 5, wait_grace_minutes: 15, demo_mode: true },
           message: "Teleconsulta simulada — sin conexión de audio o video",
         },
       },
@@ -330,7 +332,7 @@ describe("Reserva, comprobante y cancelación", () => {
     );
     wrapper(<Routes><Route path="/portal/appointments/:id/teleconsult" element={<Teleconsultation/>}/></Routes>, "/portal/appointments/1/teleconsult");
     expect(await screen.findByText("Teleconsulta simulada — sin conexión de audio o video")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /Sala disponible/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Abrir sala simulada" }));
     expect(fetch.mock.calls.some((c) => c[0] === "/api/appointments/1/teleconsult/status")).toBe(true);
   });
   it("ofrece simular la ausencia del paciente cuando la sala está disponible", async () => {
@@ -340,6 +342,7 @@ describe("Reserva, comprobante y cancelación", () => {
           ...appointment,
           modality: "VIRTUAL",
           virtual_status: "SALA_DISPONIBLE",
+          virtual_state: { status: "PACIENTE_EN_ESPERA", lifecycle_status: "SALA_DISPONIBLE", patient_present: false, doctor_present: false, demo_clock_advanced: true, available_actions: ["PATIENT_ABSENT"], room_open_minutes: 5, wait_grace_minutes: 15, demo_mode: true },
           message: "Teleconsulta simulada — sin conexión de audio o video",
         },
       },
@@ -348,8 +351,27 @@ describe("Reserva, comprobante y cancelación", () => {
         : undefined,
     );
     wrapper(<Routes><Route path="/portal/appointments/:id/teleconsult" element={<Teleconsultation/>}/></Routes>, "/portal/appointments/1/teleconsult");
-    await userEvent.click(await screen.findByRole("button", { name: "Simular estado: Paciente ausente" }));
-    expect(fetch.mock.calls.some((call) => call[1]?.body === JSON.stringify({ status: "PACIENTE_AUSENTE" }))).toBe(true);
+    await userEvent.click(await screen.findByRole("button", { name: "Registrar ausencia del paciente" }));
+    expect(fetch.mock.calls.some((call) => call[1]?.body === JSON.stringify({ event: "PATIENT_ABSENT" }))).toBe(true);
+  });
+  it("muestra la finalización como solo lectura y enlaza el historial", async () => {
+    mockApi({
+      "/appointments/1/teleconsult": {
+        ...appointment,
+        modality: "VIRTUAL",
+        status: "ATTENDED",
+        virtual_status: "FINALIZADA",
+        virtual_state: {
+          status: "FINALIZADA", lifecycle_status: "FINALIZADA", patient_present: true,
+          doctor_present: true, demo_clock_advanced: false, finalized_at: "2026-11-09T15:00:00Z",
+          available_actions: [], room_open_minutes: 5, wait_grace_minutes: 15, demo_mode: true,
+        },
+      },
+    });
+    wrapper(<Routes><Route path="/portal/appointments/:id/teleconsult" element={<Teleconsultation/>}/></Routes>, "/portal/appointments/1/teleconsult");
+    expect(await screen.findByText(/Atención finalizada en modo demostración/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /finalizar teleconsulta/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Ver historial de mi cita" })).toHaveAttribute("href", "/portal/appointments/1");
   });
   it("confirma una retención sin copago por API", async () => {
     const fetch = mockApi(

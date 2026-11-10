@@ -86,7 +86,15 @@ class HoldInput(Input):
     modality: Literal['PRESENCIAL', 'VIRTUAL'] = 'PRESENCIAL'
 
 class TeleconsultationStatus(Input):
-    status: Literal['SALA_DISPONIBLE','PACIENTE_EN_ESPERA','MEDICO_EN_ESPERA','EN_ATENCION','FINALIZADA','PACIENTE_AUSENTE','MEDICO_AUSENTE']
+    event: Literal['ADVANCE_DEMO_CLOCK','OPEN_ROOM','PATIENT_JOIN','DOCTOR_JOIN','START','FINALIZE','PATIENT_ABSENT','DOCTOR_ABSENT','TECHNICAL_ERROR','RETRY'] | None = None
+    status: Literal['SALA_DISPONIBLE','PACIENTE_EN_ESPERA','MEDICO_EN_ESPERA','EN_ATENCION','FINALIZADA','PACIENTE_AUSENTE','MEDICO_AUSENTE'] | None = None
+    reason: str | None = Field(default=None, max_length=300)
+
+    @model_validator(mode='after')
+    def require_one_transition(self):
+        if (self.event is None) == (self.status is None):
+            raise ValueError('Indica un evento de teleconsulta')
+        return self
 
 class Cancel(Input):
     version: int = Field(gt=0)

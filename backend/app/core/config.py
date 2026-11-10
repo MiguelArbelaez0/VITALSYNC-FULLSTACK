@@ -4,6 +4,8 @@ DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql+psycopg://vitalsync:local_d
 DEMO_MODE = os.getenv('DEMO_MODE', 'false').lower() == 'true'
 HOLD_MINUTES = int(os.getenv('HOLD_MINUTES', '10'))
 CANCELLATION_HOURS = int(os.getenv('CANCELLATION_HOURS', '2'))
+TELECONSULT_ROOM_OPEN_MINUTES = int(os.getenv('TELECONSULT_ROOM_OPEN_MINUTES', '5'))
+TELECONSULT_WAIT_GRACE_MINUTES = int(os.getenv('TELECONSULT_WAIT_GRACE_MINUTES', '15'))
 SESSION_HOURS = int(os.getenv('SESSION_HOURS', '12'))
 COOKIE_SECURE = os.getenv('COOKIE_SECURE', 'false').lower() == 'true'
 ALLOWED_ORIGINS = os.getenv('ALLOWED_ORIGINS', 'http://localhost:5188,http://127.0.0.1:5188,http://localhost:8088').split(',')

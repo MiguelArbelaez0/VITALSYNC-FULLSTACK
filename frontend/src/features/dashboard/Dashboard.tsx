@@ -153,13 +153,13 @@ export function Dashboard() {
               </div>
             </div>
           ) : (
-            <Empty title="Tu próxima cita comienza aquí">
+            <Empty title="No tienes próximas citas programadas">
               <p>
                 Reserva un espacio para tu salud.
                 <br />
                 Encuentra al profesional indicado para ti.
               </p>
-              <Go to="/portal/doctors">Agendar mi primera cita</Go>
+              <Go to="/portal/doctors">Agendar una cita</Go>
             </Empty>
           )}
         </section>

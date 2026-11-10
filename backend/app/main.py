@@ -13,6 +13,7 @@ from app.models.entities import *
 from app.schemas.requests import Login, Register, Profile, PaymentInput, Reconcile, HoldInput, Cancel, CancelPlanInput, TeleconsultationStatus
 from app.repositories.queries import *
 from app.services import booking, payments, plans as plan_services
+from app.services import teleconsultation
 
 app = FastAPI(title='VITALSYNC · Portal del paciente', version='1.0.0')
 PRIVACY_NOTICE_VERSION = 'VITALSYNC-PRIVACIDAD-2026-11-v1'
@@ -55,7 +56,7 @@ def health(db: Session = Depends(get_db, scope='function')):
 
 @app.get('/api/config')
 def config():
-    return dict(demo_mode=DEMO_MODE, hold_minutes=HOLD_MINUTES, cancellation_hours=CANCELLATION_HOURS, timezone='America/Bogota')
+    return dict(demo_mode=DEMO_MODE, hold_minutes=HOLD_MINUTES, cancellation_hours=CANCELLATION_HOURS, teleconsult_room_open_minutes=TELECONSULT_ROOM_OPEN_MINUTES, teleconsult_wait_grace_minutes=TELECONSULT_WAIT_GRACE_MINUTES, timezone='America/Bogota')
 
 def profile_dict(db, u):
     p = db.get(Patient, u.id)
@@ -211,7 +212,7 @@ def cancel_my_plan(data: CancelPlanInput, user=Depends(current_user, scope='func
 
 @app.get('/api/dashboard')
 def dashboard(user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
-    rows = db.execute(appointments_query(user.id).where(Appointment.status == 'CONFIRMED', Appointment.starts_at > now()).order_by(Appointment.starts_at)).all()
+    rows = db.execute(appointments_query(user.id).where(Appointment.status.in_(['CONFIRMED','TECHNICAL_ISSUE']), Appointment.starts_at > now()).order_by(Appointment.starts_at)).all()
     unread = len(db.scalars(select(Notification.id).where(Notification.patient_id == user.id, Notification.read == False)).all())
     return dict(name=user.name, plan=my_plan(db, user.id), upcoming_count=len(rows), next_appointment=appointment_dict(*rows[0]) if rows else None, unread_notifications=unread)
 
@@ -302,25 +303,16 @@ def appointment(appointment_id: int, user=Depends(current_user, scope='function'
     result['location'] = 'Sede VITALSYNC Bogotá (ficticia)' if result['modality'] == 'PRESENCIAL' else None
     if result['modality'] == 'VIRTUAL':
         vc = db.get(VirtualConsultation, appointment_id)
-        result['virtual_status'] = vc.status if vc else 'PROGRAMADA'
+        result['virtual_status'] = teleconsultation.display_status(vc) if vc else 'PROGRAMADA'
+        result['virtual_state'] = teleconsultation.state_dict(db.get(Appointment, appointment_id), vc) if vc else None
     else:
         result['virtual_status'] = None
     result['history'] = db.scalars(select(StatusHistory).where(StatusHistory.appointment_id == appointment_id).order_by(StatusHistory.id)).all()
     return result
 
-VIRTUAL_TRANSITIONS = {
-    'PROGRAMADA': {'SALA_DISPONIBLE'},
-    'SALA_DISPONIBLE': {'PACIENTE_EN_ESPERA', 'PACIENTE_AUSENTE'},
-    'PACIENTE_EN_ESPERA': {'MEDICO_EN_ESPERA', 'MEDICO_AUSENTE'},
-    'MEDICO_EN_ESPERA': {'EN_ATENCION'},
-    'EN_ATENCION': {'FINALIZADA'},
-    'PACIENTE_AUSENTE': set(), 'MEDICO_AUSENTE': set(),
-    'FINALIZADA': set(), 'CANCELADA': set(),
-}
-
 @app.get('/api/appointments/{appointment_id}/teleconsult')
 def virtual_teleconsult(appointment_id: int, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
-    row = db.execute(appointments_query(user.id).where(Appointment.id == appointment_id, Appointment.modality == 'VIRTUAL', Appointment.status == 'CONFIRMED')).first()
+    row = db.execute(appointments_query(user.id).where(Appointment.id == appointment_id, Appointment.modality == 'VIRTUAL')).first()
     if not row:
         raise HTTPException(404, 'Teleconsulta no encontrada o no pertenece a tu cuenta')
     session = db.get(VirtualConsultation, appointment_id)
@@ -328,24 +320,15 @@ def virtual_teleconsult(appointment_id: int, user=Depends(current_user, scope='f
         raise HTTPException(404, 'Teleconsulta no disponible')
     result = appointment_dict(*row)
     result['patient'] = user.name
-    result['message'] = 'Teleconsulta simulada — sin conexión de audio o video'
-    result['virtual_status'] = session.status
+    result['message'] = teleconsultation.PROVIDER.message
+    result['virtual_status'] = teleconsultation.display_status(session)
+    result['virtual_state'] = teleconsultation.state_dict(db.get(Appointment, appointment_id), session)
     return result
 
 @app.post('/api/appointments/{appointment_id}/teleconsult/status')
 def set_virtual_status(appointment_id: int, data: TeleconsultationStatus, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
-    booking.lock_patient(db, user.id)
-    appointment = db.scalar(select(Appointment).where(Appointment.id == appointment_id, Appointment.patient_id == user.id, Appointment.modality == 'VIRTUAL').with_for_update())
-    if not appointment or appointment.status != 'CONFIRMED':
-        raise HTTPException(404, 'Teleconsulta no encontrada o no pertenece a tu cuenta')
-    session = db.get(VirtualConsultation, appointment_id)
-    if not session or data.status not in VIRTUAL_TRANSITIONS.get(session.status, set()):
-        raise HTTPException(409, 'Este estado no corresponde al siguiente paso de la simulación')
-    session.status = data.status
-    session.updated_at = now()
-    db.add(AuditEvent(actor_id=user.id, action='SIMULATED_TELECONSULT_' + data.status, entity_id=appointment_id))
-    db.add(StatusHistory(appointment_id=appointment_id, status='VIRTUAL_' + data.status, author_id=user.id, reason='Cambio de estado de teleconsulta simulada'))
-    return {'appointment_id': appointment_id, 'status': session.status, 'message': 'Estado demostrativo guardado. No hay conexión de audio ni video.'}
+    event = data.event or teleconsultation.LEGACY_EVENTS[data.status]
+    return teleconsultation.apply_event(db, user, appointment_id, event, data.reason)
 
 @app.post('/api/appointments/{appointment_id}/cancel')
 def cancel(appointment_id: int, data: Cancel, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):

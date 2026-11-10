@@ -643,37 +643,88 @@ def test_virtual_room_state_transitions_and_access_control(patient):
     activate(patient,'Premium')
     h=patient.post('/api/holds',json={'availability_id':virtual_slot(patient)['id'],'modality':'VIRTUAL'}).json()
     aid=patient.post(f"/api/holds/{h['id']}/confirm").json()['id']
+    next_hold=patient.post('/api/holds',json={'availability_id':virtual_slot(patient)['id'],'modality':'VIRTUAL'}).json()
+    next_id=patient.post(f"/api/holds/{next_hold['id']}/confirm").json()['id']
     room=patient.get(f'/api/appointments/{aid}/teleconsult')
     assert room.status_code==200 and 'sin conexión de audio o video' in room.json()['message'].lower()
-    for step in ['SALA_DISPONIBLE','PACIENTE_EN_ESPERA','MEDICO_EN_ESPERA','EN_ATENCION','FINALIZADA']:
-        r=patient.post(f'/api/appointments/{aid}/teleconsult/status',json={'status':step})
-        assert r.status_code==200 and r.json()['status']==step
-    assert patient.post(f'/api/appointments/{aid}/teleconsult/status',json={'status':'EN_ATENCION'}).status_code==409
+    post=lambda event: patient.post(f'/api/appointments/{aid}/teleconsult/status',json={'event':event})
+    assert post('ADVANCE_DEMO_CLOCK').status_code==200
+    assert post('OPEN_ROOM').json()['state']['lifecycle_status']=='SALA_DISPONIBLE'
+    assert post('DOCTOR_JOIN').json()['state']['doctor_present'] is True
+    waiting=post('PATIENT_JOIN')
+    assert waiting.status_code==200 and waiting.json()['status']=='AMBOS_PRESENTES'
+    assert post('START').json()['appointment_status']=='IN_PROGRESS'
+    finished=post('FINALIZE')
+    assert finished.status_code==200 and finished.json()['appointment_status']=='ATTENDED'
+    assert finished.json()['state']['lifecycle_status']=='FINALIZADA'
+    assert post('FINALIZE').status_code==409
+    detail=patient.get(f'/api/appointments/{aid}').json()
+    assert detail['status']=='ATTENDED' and detail['virtual_status']=='FINALIZADA'
+    assert detail['attended_at'] and detail['virtual_state']['finalized_at']
+    assert patient.get('/api/dashboard').json()['next_appointment']['id']==next_id
+    assert patient.get(f'/api/appointments/{aid}').json()['history'][-1]['status']=='ATTENDED'
+    assert len([n for n in patient.get('/api/notifications').json() if 'finalizada correctamente' in n['message'].lower()])==1
     with TestClient(app) as other:
         register_patient(other,'Otro Paciente','teleconsult-denied@example.com','Paciente2026!')
         assert other.get(f'/api/appointments/{aid}/teleconsult').status_code==404
         assert other.post(f'/api/appointments/{aid}/teleconsult/status',json={'status':'SALA_DISPONIBLE'}).status_code==404
     data={'version':1,'reason':'El paciente cancela su cita virtual','confirmed':True}
-    assert patient.post(f'/api/appointments/{aid}/cancel',json=data).status_code==200
-    assert patient.get(f'/api/appointments/{aid}/teleconsult').status_code==404
+    assert patient.post(f'/api/appointments/{aid}/cancel',json=data).status_code==409
+    assert patient.get(f'/api/appointments/{aid}/teleconsult').json()['virtual_status']=='FINALIZADA'
     with SessionLocal() as db:
-        assert db.get(VirtualConsultation,aid).status=='CANCELADA'
+        assert db.get(VirtualConsultation,aid).status=='FINALIZADA'
 
 def test_virtual_absence_outcomes_are_available_only_at_allowed_steps(patient):
     activate(patient,'Premium')
     first=patient.post('/api/holds',json={'availability_id':virtual_slot(patient)['id'],'modality':'VIRTUAL'}).json()
     first_id=patient.post(f"/api/holds/{first['id']}/confirm").json()['id']
-    assert patient.post(f'/api/appointments/{first_id}/teleconsult/status',json={'status':'SALA_DISPONIBLE'}).status_code==200
-    absent=patient.post(f'/api/appointments/{first_id}/teleconsult/status',json={'status':'PACIENTE_AUSENTE'})
+    post=lambda event: patient.post(f'/api/appointments/{first_id}/teleconsult/status',json={'event':event})
+    assert post('ADVANCE_DEMO_CLOCK').status_code==200
+    assert post('OPEN_ROOM').status_code==200
+    absent=post('PATIENT_ABSENT')
     assert absent.status_code==200 and absent.json()['status']=='PACIENTE_AUSENTE'
-    assert patient.post(f'/api/appointments/{first_id}/teleconsult/status',json={'status':'EN_ATENCION'}).status_code==409
+    assert patient.get(f'/api/appointments/{first_id}').json()['status']=='PATIENT_ABSENT'
+    assert post('START').status_code==409
 
     second=patient.post('/api/holds',json={'availability_id':virtual_slot(patient)['id'],'modality':'VIRTUAL'}).json()
     second_id=patient.post(f"/api/holds/{second['id']}/confirm").json()['id']
-    for step in ['SALA_DISPONIBLE','PACIENTE_EN_ESPERA']:
-        assert patient.post(f'/api/appointments/{second_id}/teleconsult/status',json={'status':step}).status_code==200
-    absent=patient.post(f'/api/appointments/{second_id}/teleconsult/status',json={'status':'MEDICO_AUSENTE'})
+    post_second=lambda event: patient.post(f'/api/appointments/{second_id}/teleconsult/status',json={'event':event})
+    assert post_second('ADVANCE_DEMO_CLOCK').status_code==200
+    assert post_second('OPEN_ROOM').status_code==200
+    absent=post_second('DOCTOR_ABSENT')
     assert absent.status_code==200 and absent.json()['status']=='MEDICO_AUSENTE'
+    assert patient.get(f'/api/appointments/{second_id}').json()['status']=='DOCTOR_ABSENT'
+
+def test_virtual_presence_gates_start_and_technical_error_can_recover(patient):
+    activate(patient,'Premium')
+    h=patient.post('/api/holds',json={'availability_id':virtual_slot(patient)['id'],'modality':'VIRTUAL'}).json()
+    aid=patient.post(f"/api/holds/{h['id']}/confirm").json()['id']
+    post=lambda event: patient.post(f'/api/appointments/{aid}/teleconsult/status',json={'event':event})
+    assert post('ADVANCE_DEMO_CLOCK').status_code==200
+    assert post('OPEN_ROOM').status_code==200
+    assert post('PATIENT_JOIN').status_code==200
+    assert post('START').status_code==409
+    assert post('DOCTOR_JOIN').status_code==200
+    assert post('START').json()['appointment_status']=='IN_PROGRESS'
+    incident=post('TECHNICAL_ERROR')
+    assert incident.status_code==200 and incident.json()['appointment_status']=='TECHNICAL_ISSUE'
+    restored=post('RETRY')
+    assert restored.status_code==200 and restored.json()['appointment_status']=='IN_PROGRESS'
+    assert post('FINALIZE').json()['appointment_status']=='ATTENDED'
+    assert patient.get('/api/appointments').json()[0]['status']=='ATTENDED'
+
+def test_normal_mode_cannot_impersonate_medical_actions(patient, monkeypatch):
+    from app.services import teleconsultation
+    activate(patient,'Premium')
+    h=patient.post('/api/holds',json={'availability_id':virtual_slot(patient)['id'],'modality':'VIRTUAL'}).json()
+    aid=patient.post(f"/api/holds/{h['id']}/confirm").json()['id']
+    monkeypatch.setattr(teleconsultation, 'DEMO_MODE', False)
+    monkeypatch.setattr(teleconsultation, 'TELECONSULT_ROOM_OPEN_MINUTES', 525600)
+    post=lambda event: patient.post(f'/api/appointments/{aid}/teleconsult/status',json={'event':event})
+    assert post('OPEN_ROOM').status_code==200
+    assert post('PATIENT_JOIN').status_code==200
+    assert post('DOCTOR_JOIN').status_code==403
+    assert post('START').status_code==403
 
 def test_virtual_appointment_migration_preserves_preexisting_data(patient):
     with SessionLocal() as db:

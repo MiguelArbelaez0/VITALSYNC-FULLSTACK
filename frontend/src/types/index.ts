@@ -100,6 +100,16 @@ export interface Appointment {
   economic_review: boolean;
   location: string|null;
   virtual_status: string|null;
+  attended_at?: string | null;
+  incidence_at?: string | null;
+  incidence_reason?: string | null;
+  virtual_state?: {
+    status: string; lifecycle_status: string; patient_present: boolean; doctor_present: boolean;
+    patient_joined_at: string | null; doctor_joined_at: string | null; room_opened_at: string | null;
+    started_at: string | null; finalized_at: string | null; demo_clock_advanced: boolean;
+    incident_reason: string | null; incident_at: string | null; incident_resolved_at: string | null;
+    available_actions: string[]; room_open_minutes: number; wait_grace_minutes: number; demo_mode: boolean;
+  } | null;
   history?: {
     id: number;
     status: string;
@@ -124,5 +134,7 @@ export interface Config {
   demo_mode: boolean;
   hold_minutes: number;
   cancellation_hours: number;
+  teleconsult_room_open_minutes: number;
+  teleconsult_wait_grace_minutes: number;
   timezone: string;
 }

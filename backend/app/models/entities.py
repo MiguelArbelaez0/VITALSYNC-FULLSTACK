@@ -177,7 +177,10 @@ class Appointment(Base):
     cancelled_by = Column(Integer, ForeignKey('users.id'))
     cancellation_reason = Column(Text)
     economic_review = Column(Boolean, default=False, nullable=False)
-    __table_args__ = (CheckConstraint("status IN ('CONFIRMED','CANCELLED','ATTENDED')"), CheckConstraint("modality IN ('PRESENCIAL','VIRTUAL')"), CheckConstraint('ends_at > starts_at'), Index('uq_confirmed_slot', 'doctor_id', 'starts_at', unique=True, postgresql_where=(status == 'CONFIRMED')))
+    attended_at = Column(DateTime(timezone=True))
+    incidence_at = Column(DateTime(timezone=True))
+    incidence_reason = Column(Text)
+    __table_args__ = (CheckConstraint("status IN ('CONFIRMED','IN_PROGRESS','CANCELLED','ATTENDED','PATIENT_ABSENT','DOCTOR_ABSENT','TECHNICAL_ISSUE')", name='appointments_status_check'), CheckConstraint("modality IN ('PRESENCIAL','VIRTUAL')"), CheckConstraint('ends_at > starts_at'), Index('uq_confirmed_slot', 'doctor_id', 'starts_at', unique=True, postgresql_where=(status == 'CONFIRMED')))
 
 class VirtualConsultation(Base):
     __tablename__ = 'virtual_consultations'
@@ -186,7 +189,20 @@ class VirtualConsultation(Base):
     doctor_id = Column(Integer, ForeignKey('doctors.id'), nullable=False, index=True)
     status = Column(String(24), nullable=False, default='PROGRAMADA')
     updated_at = Column(DateTime(timezone=True), default=now, nullable=False)
-    __table_args__ = (CheckConstraint("status IN ('PROGRAMADA','SALA_DISPONIBLE','PACIENTE_EN_ESPERA','MEDICO_EN_ESPERA','EN_ATENCION','FINALIZADA','PACIENTE_AUSENTE','MEDICO_AUSENTE','CANCELADA')"),)
+    patient_present = Column(Boolean, nullable=False, default=False, server_default='false')
+    doctor_present = Column(Boolean, nullable=False, default=False, server_default='false')
+    patient_joined_at = Column(DateTime(timezone=True))
+    doctor_joined_at = Column(DateTime(timezone=True))
+    room_opened_at = Column(DateTime(timezone=True))
+    started_at = Column(DateTime(timezone=True))
+    finalized_at = Column(DateTime(timezone=True))
+    demo_clock_advanced_at = Column(DateTime(timezone=True))
+    resume_status = Column(String(24))
+    resume_appointment_status = Column(String(24))
+    incident_reason = Column(Text)
+    incident_at = Column(DateTime(timezone=True))
+    incident_resolved_at = Column(DateTime(timezone=True))
+    __table_args__ = (CheckConstraint("status IN ('PROGRAMADA','SALA_DISPONIBLE','EN_ESPERA','EN_ATENCION','FINALIZADA','PACIENTE_AUSENTE','MEDICO_AUSENTE','ERROR_TECNICO','CANCELADA')", name='ck_virtual_consultations_status'),)
 
 class StatusHistory(Base):
     __tablename__ = 'appointment_status_history'

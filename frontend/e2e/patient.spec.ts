@@ -201,7 +201,9 @@ test("Paciente real: registro, login, plan, copago, cita y cancelación", async 
   await expect(teleconsultLink).toHaveCSS("background-color", "rgb(13, 101, 114)");
   await teleconsultLink.click();
   await expect(page.getByText("Teleconsulta simulada — sin conexión de audio o video")).toBeVisible();
-  await page.getByRole("button", { name: /Simular siguiente estado: Sala disponible/ }).click();
+  const advanceClock = page.getByRole("button", { name: "Avanzar reloj de demostración" });
+  if (await advanceClock.count()) await advanceClock.click();
+  await page.getByRole("button", { name: "Abrir sala simulada" }).click();
   await expect(page.getByText("Sala disponible")).toBeVisible();
   await page.screenshot({
     path: resolve(
