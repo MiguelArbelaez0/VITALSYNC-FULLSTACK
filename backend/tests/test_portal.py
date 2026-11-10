@@ -654,10 +654,11 @@ def test_virtual_room_state_transitions_and_access_control(patient):
         assert other.get(f'/api/appointments/{aid}/teleconsult').status_code==404
         assert other.post(f'/api/appointments/{aid}/teleconsult/status',json={'status':'SALA_DISPONIBLE'}).status_code==404
     data={'version':1,'reason':'El paciente cancela su cita virtual','confirmed':True}
-    assert patient.post(f'/api/appointments/{aid}/cancel',json=data).status_code==200
-    assert patient.get(f'/api/appointments/{aid}/teleconsult').status_code==404
+    assert patient.post(f'/api/appointments/{aid}/cancel',json=data).status_code==409
+    assert patient.get(f'/api/appointments/{aid}/teleconsult').json()['virtual_status']=='FINALIZADA'
     with SessionLocal() as db:
-        assert db.get(VirtualConsultation,aid).status=='CANCELADA'
+        assert db.get(VirtualConsultation,aid).status=='FINALIZADA'
+        assert db.get(Appointment,aid).status=='ATTENDED'
 
 def test_virtual_absence_outcomes_are_available_only_at_allowed_steps(patient):
     activate(patient,'Premium')

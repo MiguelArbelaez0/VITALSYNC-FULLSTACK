@@ -58,6 +58,7 @@ function mockApi(
         hold_minutes: 10,
       });
     if (path in routes) return respond(routes[path]);
+    if (path.startsWith("/appointments?view=") && "/appointments" in routes) return respond(routes["/appointments"]);
     return respond({ detail: "Ruta de prueba no definida: " + path }, 404);
   });
   vi.stubGlobal("fetch", fn);
@@ -228,7 +229,7 @@ describe("Datos, estados y disponibilidad", () => {
     expect(await screen.findByText("Hola, Valentina 👋")).toBeInTheDocument();
     expect(screen.getByText("03")).toBeInTheDocument();
     expect(screen.getByText("Sin activar")).toBeInTheDocument();
-    expect(screen.getByText("Agendar mi primera cita")).toBeInTheDocument();
+    expect(screen.getByText("Agendar cita")).toBeInTheDocument();
   });
   it("muestra carga y error del servicio", async () => {
     mockApi({}, (path) =>
@@ -319,6 +320,7 @@ describe("Reserva, comprobante y cancelación", () => {
         "/appointments/1/teleconsult": {
           ...appointment,
           modality: "VIRTUAL",
+          demo_mode: true,
           virtual_status: "PROGRAMADA",
           message: "Teleconsulta simulada — sin conexión de audio o video",
         },
@@ -339,6 +341,7 @@ describe("Reserva, comprobante y cancelación", () => {
         "/appointments/1/teleconsult": {
           ...appointment,
           modality: "VIRTUAL",
+          demo_mode: true,
           virtual_status: "SALA_DISPONIBLE",
           message: "Teleconsulta simulada — sin conexión de audio o video",
         },
@@ -625,5 +628,47 @@ describe("Cancelación universal de planes", () => {
     expect(await within(card!).findByRole("button", { name: "Activar plan" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Cancelar plan" })).not.toBeInTheDocument();
     expect(fetch.mock.calls.filter(([url]) => url === "/api/my-plan").length).toBeGreaterThan(1);
+  });
+});
+
+
+describe("Finalización de teleconsulta", () => {
+  it("mueve una cita futura al historial de finalizadas y conserva la otra", async () => {
+    const future = new Date(Date.now() + 86400000 * 5).toISOString();
+    const completed = { ...appointment, starts_at: future, ends_at: future, status: "ATTENDED", modality: "VIRTUAL", completion_source: "DEMO", simulated_completed_at: new Date().toISOString() };
+    const pending = { ...appointment, id: 2, code: "VS-PENDIENTE", starts_at: future, ends_at: future, doctor: "Doctor pendiente", modality: "VIRTUAL" };
+    mockApi({}, (path) => {
+      if (path === "/appointments?view=upcoming") return respond([pending]);
+      if (path === "/appointments?view=completed") return respond([completed]);
+    });
+    wrapper(<Appointments/>);
+    expect(await screen.findByText("Doctor pendiente")).toBeInTheDocument();
+    expect(screen.queryByText("VS-TEST")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "Historial · Finalizadas" }));
+    expect(await screen.findByText("Finalizada (simulación)")).toBeInTheDocument();
+    expect(screen.getByText("VS-TEST")).toBeInTheDocument();
+    expect(screen.queryByText("Doctor pendiente")).not.toBeInTheDocument();
+  });
+
+  it("finalizar refresca el dashboard y retira los controles sin recargar", async () => {
+    let finished = false;
+    const fetch = mockApi({}, (path) => {
+      if (path === "/appointments/1/teleconsult/status") { finished = true; return respond({ status: "FINALIZADA" }); }
+      if (path === "/appointments/1/teleconsult") return respond({ ...appointment, modality: "VIRTUAL", demo_mode: true, status: finished ? "ATTENDED" : "IN_PROGRESS", completion_source: finished ? "DEMO" : null, virtual_status: finished ? "FINALIZADA" : "EN_ATENCION" });
+      if (path === "/dashboard") return respond({ name: "Valentina", plan: { status: "INACTIVE", plan: null, expires_at: null }, upcoming_count: finished ? 0 : 1, unread_notifications: finished ? 1 : 0, next_appointment: finished ? null : appointment });
+    });
+    wrapper(<Routes><Route path="/portal/appointments/:id/teleconsult" element={<><Dashboard/><Teleconsultation/></>}/></Routes>, "/portal/appointments/1/teleconsult");
+    await userEvent.click(await screen.findByRole("button", { name: "Finalizar teleconsulta simulada" }));
+    expect(await screen.findByText("No tienes próximas citas programadas")).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Ver historial de cita" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Finalizar|Simular/ })).not.toBeInTheDocument();
+    expect(fetch.mock.calls.filter(c => c[0] === "/api/dashboard").length).toBeGreaterThan(1);
+  });
+
+  it("oculta acciones demostrativas cuando el backend deshabilita DEMO_MODE", async () => {
+    mockApi({ "/appointments/1/teleconsult": { ...appointment, virtual_status: "PROGRAMADA", demo_mode: false } });
+    wrapper(<Routes><Route path="/portal/appointments/:id/teleconsult" element={<Teleconsultation/>}/></Routes>, "/portal/appointments/1/teleconsult");
+    await screen.findByText("La simulación está deshabilitada fuera del modo demostración.");
+    expect(screen.queryByRole("button", { name: /Simular/ })).not.toBeInTheDocument();
   });
 });

@@ -25,18 +25,20 @@ export function Appointments() {
   const [tab, setTab] = useState("upcoming");
   const [modalityFilter, setModalityFilter] = useState<"ALL" | Modality>("ALL");
   const q = useQuery({
-    queryKey: ["appointments"],
-    queryFn: () => api<Appointment[]>("/appointments"),
+    queryKey: ["appointments", tab],
+    queryFn: () => api<Appointment[]>("/appointments?view=" + ({ upcoming: "upcoming", completed: "completed", history: "history", cancelled: "cancelled" }[tab] ?? "all")),
   });
   const items = q.data
     ?.filter((a) =>
       (modalityFilter === "ALL" || a.modality === modalityFilter) &&
       (tab === "cancelled"
         ? a.status === "CANCELLED"
+        : tab === "completed"
+          ? a.status === "ATTENDED"
         : tab === "history"
           ? a.status !== "CANCELLED" &&
-            (a.status === "ATTENDED" || new Date(a.starts_at) <= new Date())
-          : a.status === "CONFIRMED" && new Date(a.starts_at) > new Date()),
+            (!["CONFIRMED", "IN_PROGRESS"].includes(a.status) || new Date(a.ends_at) <= new Date())
+          : ["CONFIRMED", "IN_PROGRESS"].includes(a.status) && new Date(a.ends_at) > new Date()),
     )
     .sort((a, b) =>
       tab === "upcoming"
@@ -54,6 +56,7 @@ export function Appointments() {
         {[
           ["upcoming", "Próximas citas"],
           ["history", "Historial"],
+          ["completed", "Historial · Finalizadas"],
           ["cancelled", "Historial · Canceladas"],
         ].map(([key, label]) => (
           <button
@@ -87,6 +90,8 @@ export function Appointments() {
           title={
             tab === "cancelled"
               ? "No tienes citas canceladas"
+              : tab === "completed"
+                ? "No tienes citas finalizadas"
               : tab === "history"
                 ? "Tu historial aparecerá aquí"
                 : "Todavía no tienes citas próximas"
@@ -115,10 +120,11 @@ export function Appointments() {
                 </span>
               </div>
               <div className="appointment-primary">
-                <Badge status={a.status} />
+                <Badge status={a.completion_source === "DEMO" ? "DEMO_COMPLETED" : a.status} />
                 <h2>{a.doctor}</h2>
                 <p>{a.specialty}</p>
                 <small>{a.code}</small>
+                {a.simulated_completed_at && <p>Simulación: {dateText(a.simulated_completed_at)} · {timeText(a.simulated_completed_at)}. No hubo atención médica real.</p>}
               </div>
               <div className="appointment-meta">
                 <span>
@@ -209,7 +215,7 @@ export function AppointmentDetail() {
             <h2>{a.doctor}</h2>
             <p>{a.specialty}</p>
           </div>
-          <Badge status={a.status} />
+          <Badge status={a.completion_source === "DEMO" ? "DEMO_COMPLETED" : a.status} />
         </div>
         <dl>
           <div>
@@ -243,6 +249,7 @@ export function AppointmentDetail() {
             <dd>{a.modality === 'VIRTUAL' ? 'Consulta virtual · Teleconsulta simulada' : 'Consulta presencial · Sede VITALSYNC Bogotá (ficticia)'}</dd>
           </div>
         </dl>
+        {a.simulated_completed_at && <p className="notice">Finalizada (simulación) · {dateText(a.simulated_completed_at)} · {timeText(a.simulated_completed_at)}. No hubo atención médica real.</p>}
         {a.status === "CANCELLED" && (
           <div className="notice">
             <strong>Cita cancelada el {dateText(a.cancelled_at!)}</strong>
@@ -261,7 +268,7 @@ export function AppointmentDetail() {
             {a.history.map((h) => (
               <p key={h.id}>
                 <span className="live-dot" />
-                {statuses[h.status]} · {dateText(h.created_at)} · {h.reason}
+                {statuses[h.status] ?? statuses[h.status.replace("VIRTUAL_", "")] ?? h.status} · {dateText(h.created_at)} · {timeText(h.created_at)} · {h.reason}
               </p>
             ))}
           </div>
@@ -287,7 +294,7 @@ export function AppointmentDetail() {
         {a.modality === "VIRTUAL" && (
           <div className="notice virtual-link">
             <strong>Teleconsulta simulada</strong>
-            {a.status === "CONFIRMED" ? (
+            {["CONFIRMED", "IN_PROGRESS"].includes(a.status) ? (
               <>
                 <p>Esta experiencia no usa conexión de audio o video.</p>
                 <Button
@@ -305,6 +312,10 @@ export function AppointmentDetail() {
                 <p>
                   {a.status === "CANCELLED"
                     ? "La cita está cancelada; la teleconsulta no está disponible."
+                    : a.completion_source === "DEMO"
+                      ? "La simulación ha finalizado; consulta el registro de la cita."
+                    : ["PATIENT_ABSENT", "DOCTOR_ABSENT", "TECHNICAL_ERROR"].includes(a.status)
+                      ? "La teleconsulta terminó con una incidencia; no se registró una atención finalizada."
                     : a.status === "ATTENDED"
                       ? "La cita ya fue atendida; la teleconsulta no está disponible."
                       : "La teleconsulta estará disponible cuando la cita esté confirmada."}
@@ -410,8 +421,7 @@ export function Teleconsultation() {
     setError(null);
     try {
       await post("/appointments/" + id + "/teleconsult/status", { status });
-      await client.invalidateQueries({ queryKey: ["teleconsult", id] });
-      await client.invalidateQueries({ queryKey: ["appointment", id] });
+      await client.invalidateQueries();
     } catch (e) {
       setError(e);
     } finally {
@@ -425,13 +435,14 @@ export function Teleconsultation() {
   const next: Record<string, string> = {
     PROGRAMADA: "SALA_DISPONIBLE",
     SALA_DISPONIBLE: "PACIENTE_EN_ESPERA",
-    PACIENTE_EN_ESPERA: "MEDICO_EN_ESPERA",
-    MEDICO_EN_ESPERA: "EN_ATENCION",
+    PACIENTE_EN_ESPERA: a.doctor_present_at ? "EN_ATENCION" : "MEDICO_EN_ESPERA",
+    MEDICO_EN_ESPERA: a.patient_present_at ? "EN_ATENCION" : "PACIENTE_EN_ESPERA",
     EN_ATENCION: "FINALIZADA",
   };
   const optional: Record<string, string[]> = {
-    SALA_DISPONIBLE: ["PACIENTE_AUSENTE"],
+    SALA_DISPONIBLE: ["MEDICO_EN_ESPERA", "PACIENTE_AUSENTE", "MEDICO_AUSENTE"],
     PACIENTE_EN_ESPERA: ["MEDICO_AUSENTE"],
+    MEDICO_EN_ESPERA: ["PACIENTE_AUSENTE"],
   };
   return (
     <>
@@ -456,19 +467,21 @@ export function Teleconsultation() {
           <div><dt>Especialidad</dt><dd>{a.specialty}</dd></div>
           <div><dt>Fecha</dt><dd>{dateText(a.starts_at)}</dd></div>
           <div><dt>Hora</dt><dd>{timeText(a.starts_at)} · Bogotá</dd></div>
-          <div><dt>Estado de la cita</dt><dd>{statuses[a.status]}</dd></div>
+          <div><dt>Estado de la cita</dt><dd>{a.completion_source === "DEMO" ? "Finalizada (simulación)" : statuses[a.status]}</dd></div>
         </dl>
         <p>Cambios de estado solo demostrativos; no acreditan atención médica real.</p>
-        {a.status === "CONFIRMED" && next[status] && (
+        {a.demo_mode === true && ["CONFIRMED", "IN_PROGRESS"].includes(a.status) && next[status] && (
           <Button disabled={busy} onClick={() => void advance(next[status])}>
-            Simular siguiente estado: {statuses[next[status]] ?? next[status]}
+            {status === "EN_ATENCION" ? "Finalizar teleconsulta simulada" : "Simular siguiente estado: " + (statuses[next[status]] ?? next[status])}
           </Button>
         )}
-        {a.status === "CONFIRMED" && (optional[status] ?? []).map((choice) => (
+        {a.demo_mode === true && ["CONFIRMED", "IN_PROGRESS"].includes(a.status) && (next[status] ? [...(optional[status] ?? []), "ERROR_TECNICO"] : []).map((choice) => (
           <Button key={choice} variant="outline" disabled={busy} onClick={() => void advance(choice)}>
             Simular estado: {statuses[choice] ?? choice}
           </Button>
         ))}
+        {a.demo_mode === false && <p>La simulación está deshabilitada fuera del modo demostración.</p>}
+        {status === "FINALIZADA" && <div className="notice"><p>Finalizada (simulación). No hubo atención médica real.</p><Link to={"/portal/appointments/" + id}>Ver historial de cita</Link></div>}
         <ErrorBox error={error} />
       </section>
     </>

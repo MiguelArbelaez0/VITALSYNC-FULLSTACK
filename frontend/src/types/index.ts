@@ -83,6 +83,12 @@ export interface Payment {
   created_at: string;
 }
 export interface Appointment {
+  completion_source?: "DEMO" | null;
+  simulated_completed_at?: string | null;
+  clinically_attended?: boolean;
+  demo_mode?: boolean;
+  patient_present_at?: string | null;
+  doctor_present_at?: string | null;
   id: number;
   code: string;
   doctor: string;

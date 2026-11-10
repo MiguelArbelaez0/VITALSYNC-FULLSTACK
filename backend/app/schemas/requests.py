@@ -86,7 +86,7 @@ class HoldInput(Input):
     modality: Literal['PRESENCIAL', 'VIRTUAL'] = 'PRESENCIAL'
 
 class TeleconsultationStatus(Input):
-    status: Literal['SALA_DISPONIBLE','PACIENTE_EN_ESPERA','MEDICO_EN_ESPERA','EN_ATENCION','FINALIZADA','PACIENTE_AUSENTE','MEDICO_AUSENTE']
+    status: Literal['SALA_DISPONIBLE','PACIENTE_EN_ESPERA','MEDICO_EN_ESPERA','EN_ATENCION','FINALIZADA','PACIENTE_AUSENTE','MEDICO_AUSENTE','ERROR_TECNICO']
 
 class Cancel(Input):
     version: int = Field(gt=0)
