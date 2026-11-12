@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text, select
 
 # Solo se permite una BD de pruebas separada; nunca truncar la de demostración.
-os.environ['DATABASE_URL'] = os.getenv('TEST_DATABASE_URL', 'postgresql+psycopg://vitalsync:local_demo_change_me@postgres:5432/vitalsync_test')
+os.environ['DATABASE_URL'] = os.getenv('TEST_DATABASE_URL', 'postgresql+psycopg://vitalsync:local_demo_change_me@db:5432/vitalsync_test')
 os.environ['DEMO_MODE'] = 'true'
 from app.main import app
 from app.db.session import SessionLocal, engine

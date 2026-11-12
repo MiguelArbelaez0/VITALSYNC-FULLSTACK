@@ -90,13 +90,11 @@ E2E médico, desde la raíz y en un proceso PowerShell independiente:
 powershell -ExecutionPolicy Bypass -File infrastructure/test-doctor-portal.ps1
 ```
 
-El script usa el proyecto `vitalsync-doctor-check`, base `vitalsync_test`, volumen propio y puertos 5589/8189/5289. Configura una contraseña de prueba únicamente en ese contenedor aislado. Playwright verifica escritorio y móvil, reserva presencial y virtual, separación de roles, presencias, finalización compartida, historial, cancelación y notificaciones. En escritorio reinicia PostgreSQL y backend, sin borrar volúmenes, y vuelve a comprobar estados y sesiones persistentes. Las capturas están en `docs/screenshots/doctor-*.png`; los reportes y trazas temporales de Playwright están excluidos de Git.
+El script usa temporalmente el proyecto `vitalsync-doctor-check`, el override explícito `infrastructure/compose.test.yml`, base `vitalsync_test`, volumen propio y puertos 5589/8189/5289. En `finally` retira sus contenedores y red, conservando su volumen, incluso si las pruebas fallan. El despliegue permanente de ambos portales sigue siendo únicamente `vitalsync`. Comprueba la contraseña existente de pruebas y no la modifica. Playwright verifica escritorio y móvil, reserva presencial y virtual, separación de roles, presencias, finalización compartida, historial, cancelación y notificaciones. En escritorio reinicia PostgreSQL y backend, sin borrar volúmenes, y vuelve a comprobar estados y sesiones persistentes. Las capturas están en `docs/screenshots/doctor-*.png`; los reportes y trazas temporales de Playwright están excluidos de Git.
 
-Se puede detener el stack de prueba conservando los datos:
+El volumen de pruebas anterior ya tiene la contraseña de pruebas configurada. Para un volumen nuevo, el alta del seed conserva una contraseña aleatoria. Un operador debe levantar explícitamente el override aislado y ejecutar allí `python -m app.doctor_demo --set-password` para elegir la contraseña de pruebas `DoctorE2E2026!`; el runner no restablece contraseñas existentes. Nunca se debe usar el volumen principal en ese override.
 
-```powershell
-docker compose -p vitalsync-doctor-check stop
-```
+El servicio PostgreSQL se llama ahora `db`. El E2E reinicia `vitalsync-doctor-check-db-1` y su backend para comprobar persistencia. Consulta [Docker unificado](DOCKER_UNIFICADO.md) para arranque, volúmenes y limpieza.
 
 
 ## Validación de entrega · 12 de noviembre de 2026
@@ -115,7 +113,7 @@ docker compose -p vitalsync-doctor-check stop
 
 Los fallos iniciales de validación se corrigieron: un selector de prueba no admitido por TypeScript, una fecha fija de fixture que ya había pasado y el nombre accesible de los selectores de agenda. Vite conserva el aviso de tamaño del paquete JavaScript (>500 kB); la suite backend avisa de una deprecación de Starlette/httpx. Ninguno impide las pruebas o la compilación.
 
-El Docker principal y su volumen no se migraron durante esta validación: siguen en su imagen/revisión previa. Las comprobaciones backend usaron `vitalsync_test` y el E2E un proyecto y volumen separados. La activación de la versión nueva sobre Docker principal se realiza con los comandos documentados después de revisar la rama.
+En la entrega inicial del portal médico, el Docker principal no se migró durante las pruebas. Posteriormente se activó y unificó el despliegue principal con `20261118_doctor_accounts`, conservando sus datos; el estado actual y sus comprobaciones están en [DOCKER_UNIFICADO.md](DOCKER_UNIFICADO.md). Las pruebas backend y E2E siguen usando bases aisladas.
 
 ### Capturas reales
 

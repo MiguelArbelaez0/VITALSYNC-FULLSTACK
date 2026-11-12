@@ -1,0 +1,30 @@
+{
+  "result": "PASS",
+  "project": "vitalsync",
+  "services": [
+    "db",
+    "backend",
+    "frontend"
+  ],
+  "database": "vitalsync",
+  "volume": "vitalsync_vitalsync_data",
+  "roles": [
+    "PATIENT",
+    "DOCTOR"
+  ],
+  "assigned_appointments_verified": 3,
+  "shared_patient_doctor_appointments": 3,
+  "tables_verified": 18,
+  "restart_verified": true,
+  "sessions_persisted": true,
+  "domain_rows_created": 0,
+  "passwords_changed": 0,
+  "initial_snapshot_match": true,
+  "backend_tests_passed": 124,
+  "react_tests_passed": 36,
+  "e2e_tests_passed": 2,
+  "final_failures": 0,
+  "build": "PASS",
+  "docker_desktop_visual": "One Compose project vitalsync: db-1, backend-1, frontend-1",
+  "existing_volumes_preserved": 7
+}

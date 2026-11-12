@@ -1,0 +1,12 @@
+# Temporary test stack only; never use the principal external volume.
+services:
+  db:
+    environment:
+      POSTGRES_DB: vitalsync_test
+  backend:
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-vitalsync}:${POSTGRES_PASSWORD:-local_demo_change_me}@db:5432/vitalsync_test
+volumes:
+  vitalsync_data:
+    external: false
+    name: ${COMPOSE_PROJECT_NAME}_vitalsync_data

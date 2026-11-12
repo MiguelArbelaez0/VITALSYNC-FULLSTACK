@@ -148,24 +148,33 @@ Backend real sobre la base **aislada** `vitalsync_test`, dentro de PostgreSQL. L
 powershell -ExecutionPolicy Bypass -File infrastructure/Test-Backend.ps1
 ```
 
-El script asume las credenciales locales predeterminadas. Para credenciales personalizadas, crea `vitalsync_test` con tu usuario y pasa `TEST_DATABASE_URL` a `docker compose run -e TEST_DATABASE_URL=... --rm backend python -m pytest -q`.
+El script toma las credenciales de la configuración efectiva y usa el servicio `db`. Separa la base de pruebas `vitalsync_test` de la base principal `vitalsync`; la fixture impide ejecutar el truncado de pruebas contra la principal.
 
-Frontend y navegador, con los servicios iniciados:
+Frontend:
 
 ```powershell
 cd frontend
 npm ci
 npm test
 npm run build
-npx playwright install chromium
-npm run test:e2e
 cd ..
-python infrastructure/verify_persistence.py
 ```
 
-Playwright usa React compilado, nginx, FastAPI y PostgreSQL, sin interceptar la API. Ejecuta el mismo recorrido en escritorio y Chromium con dimensiones de iPhone 13. Las cuentas nuevas de E2E quedan como datos ficticios de la demostración. `E2E_BASE_URL` permite cambiar el puerto. Las capturas se guardan en `docs/screenshots` y las trazas fallidas en `frontend/test-results`.
+El E2E que crea cuentas y reservas utiliza exclusivamente un entorno temporal aislado. El script selecciona explícitamente `infrastructure/compose.test.yml`, conserva el volumen de pruebas y retira sus contenedores y red incluso cuando una prueba falla. No constituye un segundo despliegue de la aplicación:
 
-La prueba de persistencia crea su propia cuenta, una cita presencial y otra virtual, ejecuta `docker compose restart` sobre **este proyecto**, compara perfil, sesión, plan, pago, citas, sala virtual, historial y notificaciones, y finalmente cancela las citas. No la ejecutes simultáneamente con Playwright porque reinicia los servicios. Resultado en `docs/persistence-result.json`.
+```powershell
+powershell -ExecutionPolicy Bypass -File infrastructure/test-doctor-portal.ps1
+```
+
+El script comprueba la contraseña de la cuenta médica de pruebas y no la sobrescribe. Si el volumen de pruebas es nuevo, la contraseña de demostración aislada debe configurarse explícitamente antes del primer E2E. Más información en [doctor-portal.md](docs/doctor-portal.md).
+
+Para verificar ambos portales y la persistencia de la base principal sin crear cuentas, citas o pagos, usa cuentas existentes. El programa solicita sus contraseñas de forma oculta; también admite `VITALSYNC_PATIENT_EMAIL`, `VITALSYNC_PATIENT_PASSWORD`, `VITALSYNC_DOCTOR_EMAIL` y `VITALSYNC_DOCTOR_PASSWORD` como variables del proceso:
+
+```powershell
+python infrastructure/verify_persistence.py --restart --output docs/docker-unification-validation.json
+```
+
+Esta comprobación compara los datos persistidos y las sesiones antes y después del reinicio; no cambia contraseñas ni cancela reservas. No la ejecutes simultáneamente con otros usuarios o pruebas que estén modificando reservas.
 
 Resultados y alcance comprobados: [VALIDACION.md](docs/VALIDACION.md).
 
@@ -174,7 +183,7 @@ Resultados y alcance comprobados: [VALIDACION.md](docs/VALIDACION.md).
 Puedes mantener PostgreSQL en Docker y usar Vite y FastAPI locales. Para Python utiliza una versión soportada por las dependencias (3.12 o 3.13), no el Python 3.15 predeterminado de esta máquina:
 
 ```powershell
-docker compose up -d postgres
+docker compose -p vitalsync up -d db
 cd backend
 py -3.13 -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -193,12 +202,12 @@ En otra terminal: `cd frontend`, `npm ci`, `npm run dev`. Detén primero los con
 ```powershell
 docker compose logs --tail 80 backend
 docker compose logs --tail 80 frontend
-docker compose restart
-docker compose down
-docker compose up -d
+docker compose -p vitalsync restart
+docker compose -p vitalsync stop
+docker compose -p vitalsync up -d --wait
 ```
 
-`down` sin `-v` conserva el volumen. No uses `down -v` si quieres conservar datos. Si la imagen no refleja un cambio, usa `docker compose up -d --build`. La primera construcción puede tardar varios minutos.
+Para el arranque habitual usa `infrastructure/Start-Vitalsync.ps1`: fija el proyecto `vitalsync`, comprueba el volumen principal y espera a que los servicios estén saludables. El volumen externo existente es `vitalsync_vitalsync_data`; Compose se detiene si falta para evitar reemplazar los datos por una base vacía. No elimines volúmenes para actualizar imágenes. Consulta el [informe de unificación y mantenimiento](docs/DOCKER_UNIFICADO.md) para respaldo y recuperación.
 
 No hay recuperación de contraseña por correo. El operador local puede restablecer una contraseña ficticia mediante una consola interactiva, que revoca las sesiones previas y guarda auditoría:
 
@@ -216,7 +225,7 @@ docker compose exec backend python -m app.reset_demo_password paciente@vitalsync
 
 ## Límites y próximos módulos
 
-No se implementaron dashboards de administrador o médico, historia clínica, videollamadas, atención médica virtual real, reprogramación avanzada, devoluciones, correos, push, pagos reales, app nativa ni despliegue público. La sala virtual solo demuestra estados guardados en la base de datos; no usa audio ni video, no pide permisos del dispositivo ni genera enlaces. La atención médica y las devoluciones requieren módulos futuros.
+No se implementaron dashboards de administrador, historia clínica, videollamadas, atención médica virtual real, reprogramación avanzada, devoluciones, correos, push, pagos reales, app nativa ni despliegue público. La sala virtual solo demuestra estados guardados en la base de datos; no usa audio ni video, no pide permisos del dispositivo ni genera enlaces. La atención médica y las devoluciones requieren módulos futuros.
 
 El comprobante se imprime con el navegador (puedes elegir Guardar como PDF); no hay un generador de PDF en el servidor. Las notificaciones y pagos listan las últimas 100 operaciones. Las retenciones vencidas dejan de bloquear por su fecha, sin requerir un proceso programado. El seed amplía la agenda al reiniciar; no sustituye un módulo administrativo.
 
@@ -235,3 +244,18 @@ docker compose exec backend python -m app.doctor_demo --set-password
 Con `DEMO_MODE=true`, el seed vincula `medico@vitalsync.demo` al Dr. Alejandro Méndez sin duplicar profesionales ni sobrescribir contraseñas. Inicia sesión en `/login`; el médico accede a `/doctor` y el paciente a `/portal`.
 
 Consulta [arquitectura, rutas, migración, pruebas y acceso local del portal médico](docs/doctor-portal.md).
+
+
+## Docker unificado
+
+El único despliegue permanente es `vitalsync`, con `frontend`, `backend` y `db`. Los dos portales comparten la API, el login y la base principal existente. El volumen principal es externo y queda fijado por nombre; no se genera una base vacía si desaparece.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File infrastructure/Start-Vitalsync.ps1
+powershell -ExecutionPolicy Bypass -File infrastructure/Backup-Vitalsync.ps1
+docker compose -p vitalsync ps
+```
+
+Los respaldos quedan fuera del repositorio, en `Escritorio\VITALSYNC-RESPALDOS`, con comprobación de lectura del archivo y SHA256. El arranque requiere el volumen principal existente o restaurado; un equipo nuevo debe recuperar un respaldo revisado antes de iniciar esta configuración protegida.
+
+Consulta [infraestructura, respaldo, volúmenes y resultados de la unificación](docs/DOCKER_UNIFICADO.md).

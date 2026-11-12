@@ -1,59 +1,113 @@
-"""Prueba real de persistencia contra los servicios Docker locales.
-Crea únicamente datos ficticios nuevos; no elimina volúmenes ni datos existentes.
-Ejecutar desde la raíz: python infrastructure/verify_persistence.py
+"""Read-only verification of both portals and PostgreSQL persistence.
+
+Uses existing accounts; never registers users, books, cancels, pays or changes passwords.
+Credentials come from environment variables or hidden prompts, never from the report.
 """
+import argparse
+import getpass
 import http.cookiejar
 import json
 import os
-import subprocess
-import time
-import urllib.request
 from pathlib import Path
-from uuid import uuid4
+import subprocess
+import urllib.error
+import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
-BASE = os.getenv('E2E_BASE_URL', 'http://localhost:5188') + '/api'
-opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+BASE = ''
+COMPOSE = ['docker', 'compose', '-p', 'vitalsync']
 
-def api(path, data=None):
-    request = urllib.request.Request(BASE + path, data=json.dumps(data).encode() if data is not None else None, headers={'Content-Type':'application/json'})
-    with opener.open(request, timeout=15) as response:
-        return json.load(response)
+
+class Session:
+    def __init__(self):
+        self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+
+    def request(self, path, body=None, expected=200):
+        request = urllib.request.Request(BASE + '/api' + path,
+            data=json.dumps(body).encode() if body is not None else None,
+            headers={'Content-Type': 'application/json'})
+        try:
+            with self.opener.open(request, timeout=20) as response:
+                assert response.status == expected, path
+                return json.load(response)
+        except urllib.error.HTTPError as error:
+            if error.code == expected:
+                return None
+            raise RuntimeError(f'{path}: HTTP {error.code}; no se modificaron credenciales') from None
+
+
+def snapshot():
+    script = (ROOT / 'infrastructure/database_snapshot.py').read_text(encoding='utf-8')
+    data = subprocess.check_output(COMPOSE + ['exec', '-T', 'backend', 'python', '-'],
+                                   cwd=ROOT, input=script, text=True)
+    return json.loads(data)
+
+
+def collect(patient, doctor):
+    return dict(patient=patient.request('/auth/me'), patient_appointments=patient.request('/appointments'),
+                doctor=doctor.request('/auth/me'), doctor_appointments=doctor.request('/doctor/appointments?view=all'))
+
 
 def main():
-    account = api('/auth/register', {'name':'Paciente Persistencia','email':f'persistence-{uuid4().hex[:12]}@example.com','password':'Persistencia2026!'})
-    premium = next(p for p in api('/plans') if p['name'] == 'Premium')
-    payment = api('/payments', {'kind':'PLAN','target_id':premium['id'],'status':'APPROVED','idempotency_key':uuid4().hex})
-    doctor = api('/doctors')[0]
-    slot = next(s for s in api(f"/doctors/{doctor['id']}/availability") if s['available'])
-    hold = api('/holds', {'availability_id':slot['id']})
-    appointment = api(f"/holds/{hold['id']}/confirm", {})
-    virtual_slot = next(s for s in api(f"/doctors/{doctor['id']}/availability?modality=VIRTUAL") if s['available'])
-    virtual_hold = api('/holds', {'availability_id':virtual_slot['id'],'modality':'VIRTUAL'})
-    virtual_appointment = api(f"/holds/{virtual_hold['id']}/confirm", {})
-    virtual_room_path = f"/appointments/{virtual_appointment['id']}/teleconsult"
-    api(f"{virtual_room_path}/status", {'status':'SALA_DISPONIBLE'})
-    before = {'profile':api('/auth/me'),'plan':api('/my-plan'),'payments':api('/payments'),'appointment':api(f"/appointments/{appointment['id']}"),'virtual_appointment':api(f"/appointments/{virtual_appointment['id']}"),'virtual_room':api(virtual_room_path),'notifications':api('/notifications')}
-    subprocess.run(['docker','compose','restart'], cwd=ROOT, check=True)
-    for attempt in range(45):
-        try:
-            api('/health')
-            break
-        except Exception:
-            time.sleep(1)
-    else:
-        raise RuntimeError('Los servicios no respondieron después del reinicio')
-    after = {'profile':api('/auth/me'),'plan':api('/my-plan'),'payments':api('/payments'),'appointment':api(f"/appointments/{appointment['id']}"),'virtual_appointment':api(f"/appointments/{virtual_appointment['id']}"),'virtual_room':api(virtual_room_path),'notifications':api('/notifications')}
-    assert before == after, 'Los datos o la sesión cambiaron tras reiniciar los servicios'
-    cancelled = api(f"/appointments/{appointment['id']}/cancel", {'version':1,'reason':'Fin de la prueba de persistencia','confirmed':True})
-    assert cancelled['status'] == 'CANCELLED'
-    virtual_cancelled = api(f"/appointments/{virtual_appointment['id']}/cancel", {'version':1,'reason':'Fin de la prueba de persistencia virtual','confirmed':True})
-    assert virtual_cancelled['status'] == 'CANCELLED'
-    result = {'result':'PASS','user_id':account['id'],'payment_id':payment['id'],'appointment_codes':[appointment['code'],virtual_appointment['code']],'verified':['sesión HttpOnly','perfil','plan activo y vigencia','pago','cita presencial confirmada','cita virtual confirmada','estado de sala virtual','historial','notificaciones'],'restart':'docker compose restart; volumen conservado','cancelled_after_restart':True}
-    output = ROOT/'docs'/'persistence-result.json'
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding='utf-8')
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+    global BASE
+    parser = argparse.ArgumentParser(description='Comprueba ambos portales sin crear ni modificar datos de negocio')
+    parser.add_argument('--restart', action='store_true', help='Reinicia db, backend y frontend conservando el volumen')
+    parser.add_argument('--output', type=Path, help='Informe JSON sin datos personales ni credenciales')
+    args = parser.parse_args()
+    config = json.loads(subprocess.check_output(COMPOSE + ['config', '--format', 'json'], cwd=ROOT, text=True))
+    assert config['name'] == 'vitalsync'
+    assert config['volumes']['vitalsync_data'] == {'name':'vitalsync_vitalsync_data','external':True}
+    assert set(config['services']) == {'db', 'backend', 'frontend'}
+    frontend_port = config['services']['frontend']['ports'][0]['published']
+    BASE = os.getenv('VITALSYNC_BASE_URL', f'http://localhost:{frontend_port}').rstrip('/')
+    assert BASE in {f'http://localhost:{frontend_port}', f'http://127.0.0.1:{frontend_port}'}, 'La URL debe corresponder al frontend local del proyecto principal'
+    patient_password = os.getenv('VITALSYNC_PATIENT_PASSWORD') or getpass.getpass('Contraseña del paciente existente: ')
+    doctor_password = os.getenv('VITALSYNC_DOCTOR_PASSWORD') or getpass.getpass('Contraseña del medico existente: ')
+    patient, doctor = Session(), Session()
+    baseline = snapshot()
+    try:
+        patient.request('/auth/login', {'email':os.getenv('VITALSYNC_PATIENT_EMAIL','paciente@vitalsync.demo'),'password':patient_password})
+        doctor.request('/auth/login', {'email':os.getenv('VITALSYNC_DOCTOR_EMAIL','medico@vitalsync.demo'),'password':doctor_password})
+        before = collect(patient, doctor)
+        assert before['patient']['role'] == 'PATIENT' and before['doctor']['role'] == 'DOCTOR'
+        patient.request('/doctor/dashboard', expected=403)
+        doctor.request('/dashboard', expected=403)
+        doctor_id = int(before['doctor']['doctor_id'])
+        expected_script = f"""import json
+from sqlalchemy import select
+from app.db.session import SessionLocal
+from app.models.entities import Appointment
+with SessionLocal() as db:
+    print(json.dumps([dict(id=a.id,patient_id=a.patient_id) for a in db.scalars(select(Appointment).where(Appointment.doctor_id=={doctor_id}))]))
+"""
+        assigned = json.loads(subprocess.check_output(COMPOSE + ['exec','-T','backend','python','-'],cwd=ROOT,input=expected_script,text=True))
+        assert {a['id'] for a in assigned} == {a['id'] for a in before['doctor_appointments']}
+        own_assigned = {a['id'] for a in assigned if a['patient_id'] == before['patient']['id']}
+        assert own_assigned <= {a['id'] for a in before['patient_appointments']}
+        if args.restart:
+            subprocess.run(COMPOSE + ['restart','db'],cwd=ROOT,check=True)
+            subprocess.run(COMPOSE + ['up','-d','--wait','db'],cwd=ROOT,check=True)
+            subprocess.run(COMPOSE + ['restart','backend','frontend'],cwd=ROOT,check=True)
+            subprocess.run(COMPOSE + ['up','-d','--wait','--wait-timeout','90'],cwd=ROOT,check=True)
+        after = collect(patient, doctor)
+        assert before == after, 'Cambios en las citas o sesiones tras reiniciar'
+        assert snapshot() == baseline, 'Cambios en el contenido persistido (se excluyen solamente las sesiones de acceso)'
+        assert patient.request('/dashboard') is not None and doctor.request('/doctor/dashboard') is not None
+        result = dict(result='PASS',project='vitalsync',services=['db','backend','frontend'],database='vitalsync',
+                      volume='vitalsync_vitalsync_data',roles=['PATIENT','DOCTOR'],assigned_appointments_verified=len(assigned),
+                      shared_patient_doctor_appointments=len(own_assigned),tables_verified=len(baseline),
+                      restart_verified=args.restart,sessions_persisted=True,domain_rows_created=0,passwords_changed=0)
+        if args.output:
+            args.output.parent.mkdir(parents=True,exist_ok=True)
+            args.output.write_text(json.dumps(result,indent=2),encoding='utf-8')
+        print(json.dumps(result,indent=2))
+    finally:
+        for session in (patient,doctor):
+            try:
+                session.request('/auth/logout', {})
+            except Exception:
+                pass
+
 
 if __name__ == '__main__':
     main()

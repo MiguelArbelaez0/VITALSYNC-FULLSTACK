@@ -116,4 +116,4 @@ El script crea su propia cuenta ficticia, reinicia los tres servicios sin borrar
 
 ## Preparación del día de la presentación
 
-Ejecuta `python -m app.seed` dentro del backend si quieres ampliar jornadas a partir de la fecha actual: `docker compose exec backend python -m app.seed`. Prepara una cuenta nueva si quieres mostrar plan inactivo desde el inicio. No necesitas reiniciar ni borrar la base para repetir la demostración. La experiencia virtual es simulada; las videollamadas y pagos reales, además de portales de médico/administrador, correos y atención clínica, corresponden a entregas posteriores.
+Ejecuta `python -m app.seed` dentro del backend si quieres ampliar jornadas a partir de la fecha actual: `docker compose exec backend python -m app.seed`. Prepara una cuenta nueva si quieres mostrar plan inactivo desde el inicio. No necesitas reiniciar ni borrar la base para repetir la demostración. La experiencia virtual es simulada; las videollamadas y pagos reales, además del portal de administrador, correos y atención clínica, corresponden a entregas posteriores.

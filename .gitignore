@@ -11,3 +11,7 @@
 *.log
 *.tsbuildinfo
 .DS_Store
+
+# Database archives contain private data and stay outside version control.
+*.dump
+*.pgdump

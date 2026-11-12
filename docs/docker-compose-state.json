@@ -1,0 +1,62 @@
+{
+  "project": "vitalsync",
+  "services": {
+    "backend": {
+      "ports": [
+        {
+          "mode": "ingress",
+          "host_ip": "127.0.0.1",
+          "target": 8000,
+          "published": "8088",
+          "protocol": "tcp"
+        }
+      ],
+      "depends_on": [
+        "db"
+      ],
+      "restart": "unless-stopped"
+    },
+    "db": {
+      "ports": [
+        {
+          "mode": "ingress",
+          "host_ip": "127.0.0.1",
+          "target": 5432,
+          "published": "5488",
+          "protocol": "tcp"
+        }
+      ],
+      "depends_on": [],
+      "restart": "unless-stopped"
+    },
+    "frontend": {
+      "ports": [
+        {
+          "mode": "ingress",
+          "host_ip": "127.0.0.1",
+          "target": 80,
+          "published": "5188",
+          "protocol": "tcp"
+        }
+      ],
+      "depends_on": [
+        "backend"
+      ],
+      "restart": "unless-stopped"
+    }
+  },
+  "volume": {
+    "name": "vitalsync_vitalsync_data",
+    "external": true
+  },
+  "database": "vitalsync",
+  "database_host": "db",
+  "compose_projects": [
+    {
+      "Name": "vitalsync",
+      "Status": "running(3)",
+      "ConfigFiles": "C:\\Users\\USUARIO\\Desktop\\DESARROLLO\\02_FULLSTACK\\VITALSYNC-FULLSTACK\\docker-compose.yml"
+    }
+  ],
+  "alembic_head": "20261118_doctor_accounts"
+}

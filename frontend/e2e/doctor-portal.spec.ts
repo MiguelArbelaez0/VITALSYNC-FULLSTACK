@@ -216,7 +216,7 @@ test("paciente y médico comparten reserva, finalización y cancelación persist
     clinically_attended: false,
   });
   if (info.project.name === "desktop") {
-    execFileSync("docker", ["restart", "vitalsync-doctor-check-postgres-1"], {
+    execFileSync("docker", ["restart", "vitalsync-doctor-check-db-1"], {
       timeout: 60000,
     });
     await expect
