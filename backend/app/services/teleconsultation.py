@@ -86,17 +86,29 @@ def state_dict(appointment, vc, demo_mode=None):
     }
 
 
-def apply_event(db, user, appointment_id, event, reason=None, demo_mode=None, legacy_status=None):
+def apply_event(db, user, appointment_id, event, reason=None, demo_mode=None, legacy_status=None, doctor_id=None):
     demo_mode = DEMO_MODE if demo_mode is None else demo_mode
-    booking.lock_patient(db, user.id)
+    if doctor_id is not None:
+        from app.core.security import doctor_for_user
+        if doctor_for_user(db, user).id != doctor_id:
+            raise HTTPException(403, 'Perfil médico no autorizado')
+        candidate = db.scalar(select(Appointment).where(Appointment.id == appointment_id, Appointment.doctor_id == doctor_id, Appointment.modality == 'VIRTUAL'))
+        if not candidate:
+            raise HTTPException(404, 'Teleconsulta no asignada a tu perfil')
+        if not demo_mode:
+            raise HTTPException(403, 'Las acciones simuladas están deshabilitadas fuera de DEMO_MODE')
+        patient_id = candidate.patient_id
+    else:
+        patient_id = user.id
+    booking.lock_patient(db, patient_id)
     appointment = db.scalar(select(Appointment).where(
-        Appointment.id == appointment_id, Appointment.patient_id == user.id,
+        Appointment.id == appointment_id, Appointment.patient_id == patient_id,
         Appointment.modality == 'VIRTUAL',
-    ).with_for_update())
-    if not appointment:
+    ).with_for_update().execution_options(populate_existing=True))
+    if not appointment or (doctor_id is not None and appointment.doctor_id != doctor_id):
         raise HTTPException(404, 'Teleconsulta no encontrada o no pertenece a tu cuenta')
-    vc = db.scalar(select(VirtualConsultation).where(VirtualConsultation.appointment_id == appointment_id).with_for_update())
-    if not vc or vc.patient_id != user.id or vc.doctor_id != appointment.doctor_id:
+    vc = db.scalar(select(VirtualConsultation).where(VirtualConsultation.appointment_id == appointment_id).with_for_update().execution_options(populate_existing=True))
+    if not vc or vc.patient_id != patient_id or vc.doctor_id != appointment.doctor_id:
         raise HTTPException(404, 'Teleconsulta no encontrada o no pertenece a tu cuenta')
     if legacy_status and not demo_mode:
         raise HTTPException(403, 'La simulación está deshabilitada fuera de DEMO_MODE; requiere atención clínica autorizada')
@@ -161,12 +173,13 @@ def apply_event(db, user, appointment_id, event, reason=None, demo_mode=None, le
 
     vc.updated_at = timestamp
     history_reason = f'DEMOSTRACIÓN · Cita {appointment.code} · {message}'
-    db.add(AuditEvent(actor_id=user.id, action='SIMULATED_TELECONSULT_' + (legacy_status or event), entity_id=appointment_id))
+    prefix = 'DOCTOR_SIMULATED_TELECONSULT_' if doctor_id is not None else 'SIMULATED_TELECONSULT_'
+    db.add(AuditEvent(actor_id=user.id, action=prefix + (legacy_status or event), entity_id=appointment_id))
     db.add(StatusHistory(appointment_id=appointment_id, status='VIRTUAL_' + vc.status, author_id=user.id, reason=history_reason))
     if event in {'START','FINALIZE','PATIENT_ABSENT','DOCTOR_ABSENT','TECHNICAL_ERROR','RETRY'}:
         db.add(StatusHistory(appointment_id=appointment_id, status=appointment.status, author_id=user.id, reason=history_reason))
     if event in {'FINALIZE','PATIENT_ABSENT','DOCTOR_ABSENT','TECHNICAL_ERROR','RETRY'}:
-        notification_service.lifecycle_update(db, user.id, appointment.code, message)
+        notification_service.lifecycle_update(db, patient_id, appointment.code, message)
     db.flush()
     state = state_dict(appointment, vc, demo_mode)
     return {'appointment_id': appointment_id, 'appointment_status': appointment.status, 'completion_source': appointment.completion_source, 'simulated_completed_at': appointment.simulated_completed_at, 'clinically_attended': appointment.clinically_attended, 'state': state, 'status': state['status'], 'message': message}

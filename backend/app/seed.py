@@ -52,6 +52,8 @@ def seed():
             blocked = (today + timedelta(days=1)).replace(hour=11)
             if not db.scalar(select(DoctorBlock.id).where(DoctorBlock.doctor_id == d.id, DoctorBlock.starts_at == blocked)):
                 db.add(DoctorBlock(doctor_id=d.id, starts_at=blocked, ends_at=blocked + timedelta(minutes=30), reason='Bloqueo administrativo de demostración'))
+        from app.doctor_demo import ensure_demo_doctor
+        ensure_demo_doctor(db)
         if not db.scalar(select(AuditEvent.id).where(AuditEvent.action == 'DEVELOPMENT_SEED')):
             db.add(AuditEvent(actor_id=admin.id, action='DEVELOPMENT_SEED'))
 

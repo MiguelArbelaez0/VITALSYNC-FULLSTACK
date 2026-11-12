@@ -15,16 +15,55 @@ import {
 } from "../features/appointments/Appointments";
 import { Teleconsultation } from "../features/appointments/Appointments";
 import { Notifications } from "../features/notifications/Notifications";
-export function Protected() {
+import {
+  DoctorDashboard,
+  DoctorAgenda,
+  DoctorDetail,
+  DoctorPatients,
+  DoctorProfilePage,
+  DoctorAvailability,
+  DoctorRoom,
+} from "../features/doctor/DoctorPortal";
+export function Protected({
+  role = "PATIENT",
+}: {
+  role?: "PATIENT" | "DOCTOR";
+}) {
   const { user, loading, error } = useAuth();
   if (loading) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   if (!user) return <Navigate to="/login" replace />;
-  if (user.role !== "PATIENT")
+  if (user.role !== role)
     return (
-      <Empty title="Acceso exclusivo para pacientes">
-        <Go to="/">Volver al inicio</Go>
+      <Empty
+        title={
+          role === "PATIENT"
+            ? "Acceso exclusivo para pacientes"
+            : "Acceso exclusivo para médicos"
+        }
+      >
+        <Go
+          to={
+            user.role === "DOCTOR"
+              ? "/doctor"
+              : user.role === "PATIENT"
+                ? "/portal"
+                : "/"
+          }
+        >
+          Volver a mi espacio
+        </Go>
       </Empty>
+    );
+  if (role === "DOCTOR" && !user.doctor_id)
+    return (
+      <ErrorBox
+        error={
+          new Error(
+            "Tu cuenta no tiene un perfil profesional válido. Contacta a VITALSYNC.",
+          )
+        }
+      />
     );
   return <Outlet />;
 }
@@ -44,8 +83,22 @@ export function App() {
           <Route path="booking/:id" element={<Booking />} />
           <Route path="appointments" element={<Appointments />} />
           <Route path="appointments/:id" element={<AppointmentDetail />} />
-          <Route path="appointments/:id/teleconsult" element={<Teleconsultation />} />
+          <Route
+            path="appointments/:id/teleconsult"
+            element={<Teleconsultation />}
+          />
           <Route path="notifications" element={<Notifications />} />
+        </Route>
+      </Route>
+      <Route element={<Protected role="DOCTOR" />}>
+        <Route path="/doctor" element={<Layout doctor />}>
+          <Route index element={<DoctorDashboard />} />
+          <Route path="appointments" element={<DoctorAgenda />} />
+          <Route path="appointments/:id" element={<DoctorDetail />} />
+          <Route path="appointments/:id/teleconsult" element={<DoctorRoom />} />
+          <Route path="patients" element={<DoctorPatients />} />
+          <Route path="profile" element={<DoctorProfilePage />} />
+          <Route path="availability" element={<DoctorAvailability />} />
         </Route>
       </Route>
       <Route

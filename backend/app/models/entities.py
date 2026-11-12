@@ -61,6 +61,13 @@ class Doctor(Base):
         Index('ix_doctors_modalities_gin', 'modalities', postgresql_using='gin'),
     )
 
+class DoctorAccount(Base):
+    __tablename__ = 'doctor_accounts'
+    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
+    doctor_id = Column(Integer, ForeignKey('doctors.id'), nullable=False)
+    __table_args__ = (UniqueConstraint('doctor_id', name='uq_doctor_accounts_doctor_id'),)
+
+
 class Availability(Base):
     __tablename__ = 'doctor_availability'
     id = Column(Integer, primary_key=True)

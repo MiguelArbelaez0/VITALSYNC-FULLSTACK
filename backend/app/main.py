@@ -7,15 +7,17 @@ from sqlalchemy import func, select, text, or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from app.core.config import *
-from app.core.security import current_user, passwords, create_session, digest
+from app.core.security import current_user, authenticated_user, doctor_for_user, passwords, create_session, digest
 from app.db.session import get_db
 from app.models.entities import *
 from app.schemas.requests import Login, Register, Profile, PaymentInput, Reconcile, HoldInput, Cancel, CancelPlanInput, TeleconsultationStatus
 from app.repositories.queries import *
 from app.services import booking, payments, plans as plan_services, teleconsultations
 from app.services import teleconsultation
+from app.routers.doctor import router as doctor_router
 
 app = FastAPI(title='VITALSYNC · Portal del paciente', version='1.0.0')
+app.include_router(doctor_router)
 PRIVACY_NOTICE_VERSION = 'VITALSYNC-PRIVACIDAD-2026-11-v1'
 
 @app.middleware('http')
@@ -66,6 +68,7 @@ def profile_dict(db, u):
         name=u.name,
         email=u.email,
         role=u.role,
+        doctor_id=doctor_for_user(db, u).id if u.role == 'DOCTOR' else None,
         phone=p.phone if p else '',
         document_type=p.document_type if p else None,
         document_masked=('•' * max(0, len(number) - 4) + number[-4:]) if number else None,
@@ -116,10 +119,12 @@ def login(data: Login, response: Response, db: Session = Depends(get_db, scope='
     valid = passwords.verify(data.password, user.password_hash if user else DUMMY_HASH)
     if not user or not valid:
         raise HTTPException(401, 'Correo o contraseña incorrectos')
-    if user.role != 'PATIENT':
-        raise HTTPException(403, 'Este portal es exclusivo para pacientes')
     if user.status != 'ACTIVE':
         raise HTTPException(403, 'Esta cuenta no está disponible. Contacta al equipo de VITALSYNC.')
+    if user.role == 'DOCTOR':
+        doctor_for_user(db, user)
+    elif user.role != 'PATIENT' or not db.get(Patient, user.id):
+        raise HTTPException(403, 'El portal para este rol todavía no está disponible')
     create_session(db, user, response)
     return profile_dict(db, user)
 
@@ -134,7 +139,9 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db, s
     return {'message': 'Sesión cerrada'}
 
 @app.get('/api/auth/me')
-def me(user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
+def me(user=Depends(authenticated_user, scope='function'), db: Session = Depends(get_db, scope='function')):
+    if user.role == 'DOCTOR':
+        doctor_for_user(db, user)
     return profile_dict(db, user)
 
 @app.patch('/api/auth/me')

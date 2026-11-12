@@ -221,3 +221,17 @@ No se implementaron dashboards de administrador o médico, historia clínica, vi
 El comprobante se imprime con el navegador (puedes elegir Guardar como PDF); no hay un generador de PDF en el servidor. Las notificaciones y pagos listan las últimas 100 operaciones. Las retenciones vencidas dejan de bloquear por su fecha, sin requerir un proceso programado. El seed amplía la agenda al reiniciar; no sustituye un módulo administrativo.
 
 Próximo módulo recomendado: administración de médicos, jornadas y bloqueos, reutilizando el mismo bloqueo transaccional del médico y la auditoría de esta entrega. No se realizó push ni publicación en GitHub.
+
+
+## Portal del médico
+
+La implementación médica de `codex/doctor-portal` comparte la aplicación y las sesiones existentes. Para iniciar la versión revisada y elegir la contraseña local de demostración:
+
+```powershell
+docker compose up -d --build
+docker compose exec backend python -m app.doctor_demo --set-password
+```
+
+Con `DEMO_MODE=true`, el seed vincula `medico@vitalsync.demo` al Dr. Alejandro Méndez sin duplicar profesionales ni sobrescribir contraseñas. Inicia sesión en `/login`; el médico accede a `/doctor` y el paciente a `/portal`.
+
+Consulta [arquitectura, rutas, migración, pruebas y acceso local del portal médico](docs/doctor-portal.md).

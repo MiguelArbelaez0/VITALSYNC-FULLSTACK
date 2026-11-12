@@ -11,6 +11,7 @@ export function Notifications() {
   const q = useQuery({
     queryKey: ["notifications"],
     queryFn: () => api<Notice[]>("/notifications"),
+    refetchInterval: 15000,
   });
   async function read(id: number) {
     try {

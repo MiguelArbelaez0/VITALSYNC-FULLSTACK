@@ -1,6 +1,8 @@
 import { NavLink, Outlet, Link } from "react-router-dom";
 import {
   Bell,
+  Clock3,
+  Stethoscope,
   CalendarDays,
   HeartPulse,
   LayoutDashboard,
@@ -22,7 +24,14 @@ const navigation = [
   { to: "/portal/notifications", icon: Bell, label: "Notificaciones" },
   { to: "/portal/profile", icon: UserRound, label: "Mi perfil" },
 ];
-export function Layout() {
+const doctorNavigation = [
+  { to: "/doctor", icon: LayoutDashboard, label: "Resumen", end: true },
+  { to: "/doctor/appointments", icon: CalendarDays, label: "Mi agenda" },
+  { to: "/doctor/patients", icon: UserRound, label: "Mis pacientes" },
+  { to: "/doctor/availability", icon: Clock3, label: "Disponibilidad" },
+  { to: "/doctor/profile", icon: Stethoscope, label: "Mi perfil" },
+];
+export function Layout({ doctor = false }: { doctor?: boolean }) {
   const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const [logoutError, setLogoutError] = useState<unknown>(null);
@@ -30,11 +39,16 @@ export function Layout() {
   async function closeSession() {
     setLoggingOut(true);
     setLogoutError(null);
-    try { await logout(); } catch (error) { setLogoutError(error); }
-    finally { setLoggingOut(false); }
+    try {
+      await logout();
+    } catch (error) {
+      setLogoutError(error);
+    } finally {
+      setLoggingOut(false);
+    }
   }
   return (
-    <div className="shell">
+    <div className={"shell " + (doctor ? "doctor-shell" : "")}>
       <aside className={"sidebar " + (open ? "is-open" : "")}>
         <div className="sidebar-brand">
           <Logo />
@@ -46,9 +60,11 @@ export function Layout() {
             <X />
           </button>
         </div>
-        <p className="nav-caption">ESPACIO DEL PACIENTE</p>
+        <p className="nav-caption">
+          {doctor ? "ESPACIO DEL MÉDICO" : "ESPACIO DEL PACIENTE"}
+        </p>
         <nav>
-          {navigation.map((n) => (
+          {(doctor ? doctorNavigation : navigation).map((n) => (
             <NavLink
               key={n.to}
               to={n.to}
@@ -69,8 +85,12 @@ export function Layout() {
             <strong>Tu bienestar nos conecta</strong>
             <p>Un espacio para cuidar de ti, a tu ritmo.</p>
           </div>
-          <ErrorBox error={logoutError}/>
-          <button className="nav-item logout" disabled={loggingOut} onClick={() => void closeSession()}>
+          <ErrorBox error={logoutError} />
+          <button
+            className="nav-item logout"
+            disabled={loggingOut}
+            onClick={() => void closeSession()}
+          >
             <LogOut size={18} />
             Cerrar sesión
           </button>
@@ -94,19 +114,28 @@ export function Layout() {
             >
               <Menu />
             </button>
-            <span>Mi espacio de salud</span>
+            <span>
+              {doctor ? "Mi espacio profesional" : "Mi espacio de salud"}
+            </span>
           </div>
           <div className="topbar-right">
-            <span className="demo-dot">Entorno de demostración</span>
-            <Link
-              className="icon-button"
-              to="/portal/notifications"
-              aria-label="Ver notificaciones"
-            >
-              <Bell size={21} />
-            </Link>
+            <span className="demo-dot">
+              {doctor ? "Portal médico" : "Entorno de demostración"}
+            </span>
+            {!doctor && (
+              <Link
+                className="icon-button"
+                to="/portal/notifications"
+                aria-label="Ver notificaciones"
+              >
+                <Bell size={21} />
+              </Link>
+            )}
             <span className="divider" />
-            <Link to="/portal/profile" className="user-chip">
+            <Link
+              to={doctor ? "/doctor/profile" : "/portal/profile"}
+              className="user-chip"
+            >
               <span className="avatar small">
                 {user?.name
                   .split(" ")
@@ -116,7 +145,7 @@ export function Layout() {
               </span>
               <span>
                 <strong>{user?.name}</strong>
-                <small>Paciente</small>
+                <small>{doctor ? "Médico" : "Paciente"}</small>
               </span>
             </Link>
           </div>

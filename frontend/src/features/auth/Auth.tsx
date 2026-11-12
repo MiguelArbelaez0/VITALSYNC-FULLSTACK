@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, Check, Eye, EyeOff, HeartPulse } from "lucide-react";
+import type { User } from "../../types";
 import { post } from "../../services/api";
 import { useAuth } from "../../hooks/useAuth";
 import { Button } from "../../components/ui/button";
@@ -84,9 +85,9 @@ export function Auth({ register = false }: { register?: boolean }) {
             privacy_accepted: values.privacy_accepted,
           }
         : { email: values.email, password: values.password };
-      await post("/auth/" + (register ? "register" : "login"), payload);
+      const account = await post<User>("/auth/" + (register ? "register" : "login"), payload);
       await refresh();
-      navigate("/portal", { state: { registrationComplete: register } });
+      navigate(account.role === "DOCTOR" ? "/doctor" : "/portal", { state: { registrationComplete: register } });
     } catch (e) {
       setError(e);
     }
