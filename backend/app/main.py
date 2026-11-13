@@ -69,6 +69,7 @@ def profile_dict(db, u):
         email=u.email,
         role=u.role,
         doctor_id=doctor_for_user(db, u).id if u.role == 'DOCTOR' else None,
+        must_change_password=bool(db.get(DoctorCredentialState,u.id) and db.get(DoctorCredentialState,u.id).must_change_password) if u.role=='DOCTOR' else False,
         phone=p.phone if p else '',
         document_type=p.document_type if p else None,
         document_masked=('•' * max(0, len(number) - 4) + number[-4:]) if number else None,

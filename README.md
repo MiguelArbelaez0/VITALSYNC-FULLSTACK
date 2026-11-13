@@ -160,7 +160,7 @@ npm run build
 cd ..
 ```
 
-El E2E que crea cuentas y reservas utiliza exclusivamente un entorno temporal aislado. El script selecciona explícitamente `infrastructure/compose.test.yml`, conserva el volumen de pruebas y retira sus contenedores y red incluso cuando una prueba falla. No constituye un segundo despliegue de la aplicación:
+El E2E que crea cuentas y reservas usa exclusivamente la base desechable `vitalsync_test`, con dos servicios temporales dentro del mismo proyecto `vitalsync`. El script selecciona `infrastructure/compose.test.yml` y retira solo esos servicios, conservando el servidor PostgreSQL y todos los volúmenes. No ejecutarlo al mismo tiempo que pytest; nunca almacenar datos útiles en `vitalsync_test`:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File infrastructure/test-doctor-portal.ps1

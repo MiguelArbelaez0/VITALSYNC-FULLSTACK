@@ -24,6 +24,8 @@ import {
   DoctorAvailability,
   DoctorRoom,
 } from "../features/doctor/DoctorPortal";
+import { DoctorClinicalHistory } from "../features/doctor/ClinicalHistory";
+import { DoctorPasswordSetup } from "../features/doctor/DoctorPassword";
 export function Protected({
   role = "PATIENT",
 }: {
@@ -65,6 +67,7 @@ export function Protected({
         }
       />
     );
+  if (role === "DOCTOR" && user.must_change_password) return <DoctorPasswordSetup/>;
   return <Outlet />;
 }
 export function App() {
@@ -97,6 +100,7 @@ export function App() {
           <Route path="appointments/:id" element={<DoctorDetail />} />
           <Route path="appointments/:id/teleconsult" element={<DoctorRoom />} />
           <Route path="patients" element={<DoctorPatients />} />
+          <Route path="patients/:id/clinical-history" element={<DoctorClinicalHistory/>} />
           <Route path="profile" element={<DoctorProfilePage />} />
           <Route path="availability" element={<DoctorAvailability />} />
         </Route>

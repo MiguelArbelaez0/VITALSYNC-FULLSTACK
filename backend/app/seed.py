@@ -54,6 +54,11 @@ def seed():
                 db.add(DoctorBlock(doctor_id=d.id, starts_at=blocked, ends_at=blocked + timedelta(minutes=30), reason='Bloqueo administrativo de demostración'))
         from app.doctor_demo import ensure_demo_doctor
         ensure_demo_doctor(db)
+        from app.services.clinical_history import seed_histories
+        try:
+            seed_histories(db)
+        except Exception:
+            raise RuntimeError("No se pudo completar el seed clínico; transacción revertida sin registrar contenido clínico") from None
         if not db.scalar(select(AuditEvent.id).where(AuditEvent.action == 'DEVELOPMENT_SEED')):
             db.add(AuditEvent(actor_id=admin.id, action='DEVELOPMENT_SEED'))
 

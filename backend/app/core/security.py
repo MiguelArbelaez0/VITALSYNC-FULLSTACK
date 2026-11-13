@@ -6,7 +6,7 @@ from pwdlib import PasswordHash
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.models.entities import SessionToken, User, Doctor, DoctorAccount, Patient, now
+from app.models.entities import SessionToken, User, Doctor, DoctorAccount, DoctorCredentialState, Patient, now
 from app.core.config import SESSION_HOURS, COOKIE_SECURE
 
 passwords = PasswordHash.recommended()
@@ -47,4 +47,8 @@ def doctor_for_user(db, user):
 
 
 def current_doctor(user=Depends(authenticated_user, scope='function'), db: Session = Depends(get_db, scope='function')):
-    return doctor_for_user(db, user)
+    doctor = doctor_for_user(db, user)
+    state = db.get(DoctorCredentialState,user.id)
+    if state and state.must_change_password:
+        raise HTTPException(403,'Debes cambiar tu contraseña inicial antes de acceder al portal médico')
+    return doctor

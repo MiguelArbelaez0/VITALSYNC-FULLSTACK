@@ -1,16 +1,16 @@
 """Medical portal. Every professional id comes from the authenticated session."""
 from datetime import date
 from typing import Literal
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import Field
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
-from app.core.security import authenticated_user, current_doctor
+from app.core.security import authenticated_user, current_doctor, doctor_for_user, passwords, digest
 from app.core.config import DEMO_MODE
 from app.db.session import get_db
-from app.models.entities import Appointment, User, Availability, DoctorBlock, VirtualConsultation, AuditEvent, now
-from app.schemas.requests import Input, Cancel, TeleconsultationStatus
-from app.services import doctor_portal as service, teleconsultation
+from app.models.entities import Appointment, User, Availability, DoctorBlock, VirtualConsultation, AuditEvent, DoctorCredentialState, SessionToken, now
+from app.schemas.requests import Input, Cancel, TeleconsultationStatus, DoctorPasswordChange
+from app.services import doctor_portal as service, teleconsultation, clinical_history
 
 router = APIRouter(prefix='/api/doctor', tags=['doctor'])
 
@@ -91,7 +91,7 @@ def patient_detail(patient_id: int, doctor=Depends(current_doctor, scope='functi
     rows = db.execute(service.appointments_query(doctor).where(Appointment.patient_id == patient_id).order_by(Appointment.starts_at.desc()).limit(500)).all()
     if not rows:
         raise HTTPException(404, 'Paciente no asignado a tu agenda')
-    return dict(id=patient_id, name=rows[0][1], appointments=[service.appointment_dict(db, doctor, a, name) for a, name in rows])
+    return dict(id=patient_id, name=rows[0][1], clinical_history_available=clinical_history.available(db,doctor.id,patient_id), appointments=[service.appointment_dict(db, doctor, a, name) for a, name in rows])
 
 
 @router.get('/availability')
@@ -125,3 +125,32 @@ def transition(appointment_id: int, data: TeleconsultationStatus, doctor=Depends
         raise HTTPException(422, 'Indica un evento de sala virtual')
     return teleconsultation.apply_event(db, user, appointment_id, data.event, data.reason,
                                         demo_mode=DEMO_MODE and teleconsultation.DEMO_MODE, doctor_id=doctor.id)
+
+
+@router.get('/patients/{patient_id}/clinical-history')
+def clinical_record(patient_id: int, doctor=Depends(current_doctor,scope='function'), user=Depends(authenticated_user,scope='function'), db: Session=Depends(get_db,scope='function')):
+    return clinical_history.read_history(db,doctor,user,patient_id)
+
+
+@router.get('/patients/{patient_id}/clinical-history/encounters/{encounter_id}')
+def clinical_visit(patient_id: int, encounter_id: int, doctor=Depends(current_doctor,scope='function'), user=Depends(authenticated_user,scope='function'), db: Session=Depends(get_db,scope='function')):
+    return clinical_history.read_encounter(db,doctor,user,patient_id,encounter_id)
+
+
+@router.post('/password')
+def change_password(data: DoctorPasswordChange, request: Request, user=Depends(authenticated_user,scope='function'), db: Session=Depends(get_db,scope='function')):
+    professional=doctor_for_user(db,user)
+    user=db.scalar(select(User).where(User.id==user.id).with_for_update().execution_options(populate_existing=True))
+    if not passwords.verify(data.current_password,user.password_hash):
+        raise HTTPException(400,'La contraseña actual no es correcta')
+    if passwords.verify(data.new_password,user.password_hash):
+        raise HTTPException(422,'Elige una contraseña distinta de la actual')
+    user.password_hash=passwords.hash(data.new_password)
+    state=db.get(DoctorCredentialState,user.id)
+    if state:
+        state.must_change_password=False
+        state.changed_at=now()
+    current_hash=digest(request.cookies.get('vitalsync_session',''))
+    db.execute(delete(SessionToken).where(SessionToken.user_id==user.id,SessionToken.token_hash!=current_hash))
+    db.add(AuditEvent(actor_id=user.id,action='DOCTOR_PASSWORD_CHANGED',entity_id=professional.id))
+    return {'message':'Contraseña actualizada. Las demás sesiones de esta cuenta se cerraron.'}

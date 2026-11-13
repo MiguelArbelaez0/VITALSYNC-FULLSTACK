@@ -15,3 +15,6 @@
 # Database archives contain private data and stay outside version control.
 *.dump
 *.pgdump
+
+# One-time administrative credential handoffs must never enter Git.
+*.credentials.json

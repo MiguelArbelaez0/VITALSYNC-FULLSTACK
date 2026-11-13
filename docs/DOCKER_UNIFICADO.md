@@ -124,7 +124,7 @@ Las variables `VITALSYNC_PATIENT_EMAIL`, `VITALSYNC_PATIENT_PASSWORD`, `VITALSYN
 
 No es necesario crear otro proyecto para entrar al médico. El login compartido es `http://localhost:5188/login`; cada cuenta se dirige según su rol. Si existe una sesión del otro rol, ciérrala antes de cambiar de cuenta. Las contraseñas anteriores se mantuvieron sin cambios.
 
-Las pruebas E2E temporales están en `infrastructure/test-doctor-portal.ps1`; requieren el override `infrastructure/compose.test.yml` y nunca deben usar el volumen principal. El script verifica la contraseña de pruebas existente sin cambiarla y conserva su volumen después de retirar contenedores/red. No se requiere mantener ese entorno levantado para usar ningún portal.
+Las pruebas E2E están en `infrastructure/test-doctor-portal.ps1`. El override `infrastructure/compose.test.yml` agrega temporalmente `test-backend` y `test-frontend` dentro del mismo proyecto `vitalsync` (8189/5289). Usan exclusivamente la base desechable `vitalsync_test` del servidor PostgreSQL existente; el fixture comprueba el nombre antes de truncar sus tablas. No ejecutar simultáneamente con pytest ni guardar datos útiles en esa base de pruebas. Se recrean únicamente sus cuentas ficticias y se exportan credenciales aleatorias a un archivo local con ACL restringida. El runner retira solo esos dos servicios, sin eliminar redes compartidas ni volúmenes. La base de aplicación `vitalsync` no se modifica. El proyecto antiguo mencionado en el inventario histórico permanece retirado.
 
 ## Modificaciones de esta entrega
 

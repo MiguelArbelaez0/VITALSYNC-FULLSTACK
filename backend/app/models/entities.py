@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint, CheckConstraint, Index, func
+from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, ForeignKey, Text, UniqueConstraint, CheckConstraint, Index, func
 from sqlalchemy.dialects.postgresql import JSONB
 from app.db.session import Base
 
@@ -246,3 +246,82 @@ class AuditEvent(Base):
     action = Column(String(60), nullable=False)
     entity_id = Column(Integer)
     created_at = Column(DateTime(timezone=True), default=now, nullable=False)
+
+
+# Academic clinical data is isolated from the general patient/account projection.
+class DemoPatient(Base):
+    __tablename__ = 'demo_patients'
+    patient_id = Column(Integer, ForeignKey('patients.id'), primary_key=True)
+    source = Column(String(32), nullable=False)
+    confirmed_by = Column(Integer, ForeignKey('users.id'), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=now, server_default=func.now())
+    __table_args__ = (CheckConstraint("source IN ('BUILTIN_SEED','OPERATOR_CONFIRMED')", name='ck_demo_patient_source'),)
+
+
+class ClinicalHistory(Base):
+    __tablename__ = 'clinical_histories'
+    id = Column(Integer, primary_key=True)
+    patient_id = Column(Integer, ForeignKey('demo_patients.patient_id'), nullable=False, unique=True)
+    demo_marker = Column(String(80), nullable=False, default='DATOS FICTICIOS DE DEMOSTRACIÓN', server_default='DATOS FICTICIOS DE DEMOSTRACIÓN')
+    birth_date = Column(Date)
+    demographic_note = Column(Text)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=now, server_default=func.now())
+    __table_args__ = (CheckConstraint("demo_marker = 'DATOS FICTICIOS DE DEMOSTRACIÓN'", name='ck_clinical_history_demo'),
+                      CheckConstraint('birth_date IS NULL OR birth_date <= CURRENT_DATE',name='ck_clinical_birth_date'))
+
+
+class ClinicalBackground(Base):
+    __tablename__ = 'clinical_backgrounds'
+    id = Column(Integer, primary_key=True)
+    history_id = Column(Integer, ForeignKey('clinical_histories.id'), nullable=False, index=True)
+    category = Column(String(20), nullable=False)
+    description = Column(Text, nullable=False)
+    __table_args__ = (UniqueConstraint('history_id', 'category', name='uq_clinical_background_category'),
+                      CheckConstraint("category IN ('PERSONAL','FAMILY','SURGICAL','PREVIOUS_DISEASE')", name='ck_clinical_background_category'))
+
+
+class ClinicalAllergy(Base):
+    __tablename__ = 'clinical_allergies'
+    id = Column(Integer, primary_key=True)
+    history_id = Column(Integer, ForeignKey('clinical_histories.id'), nullable=False, index=True)
+    substance = Column(String(160), nullable=False)
+    reaction = Column(Text, nullable=False)
+    __table_args__ = (UniqueConstraint('history_id', 'substance', name='uq_clinical_allergy'),)
+
+
+class ClinicalMedication(Base):
+    __tablename__ = 'clinical_medications'
+    id = Column(Integer, primary_key=True)
+    history_id = Column(Integer, ForeignKey('clinical_histories.id'), nullable=False, index=True)
+    name = Column(String(160), nullable=False)
+    note = Column(Text, nullable=False)
+    status = Column(String(16), nullable=False, default='CURRENT')
+    __table_args__ = (UniqueConstraint('history_id', 'name', name='uq_clinical_medication'),
+                      CheckConstraint("status IN ('CURRENT','PREVIOUS')", name='ck_clinical_medication_status'))
+
+
+class ClinicalEncounter(Base):
+    __tablename__ = 'clinical_encounters'
+    id = Column(Integer, primary_key=True)
+    history_id = Column(Integer, ForeignKey('clinical_histories.id'), nullable=False)
+    doctor_id = Column(Integer, ForeignKey('doctors.id'), nullable=False, index=True)
+    specialty_id = Column(Integer, ForeignKey('specialties.id'), nullable=False)
+    appointment_id = Column(Integer, ForeignKey('appointments.id'), unique=True)
+    seed_key = Column(String(40), nullable=False)
+    occurred_at = Column(DateTime(timezone=True), nullable=False)
+    reason = Column(Text, nullable=False)
+    observations = Column(Text, nullable=False)
+    diagnosis = Column(Text, nullable=False)
+    recommendations = Column(Text, nullable=False)
+    vitals = Column(JSONB, nullable=False, default=dict)
+    __table_args__ = (UniqueConstraint('history_id', 'seed_key', name='uq_clinical_encounter_seed'),
+                      CheckConstraint("jsonb_typeof(vitals) = 'object'", name='ck_clinical_encounter_vitals'),
+                      Index('ix_clinical_encounters_history_date', 'history_id', 'occurred_at'))
+
+
+class DoctorCredentialState(Base):
+    __tablename__ = 'doctor_credential_states'
+    user_id = Column(Integer, ForeignKey('doctor_accounts.user_id'), primary_key=True)
+    must_change_password = Column(Boolean, nullable=False, default=True, server_default='true')
+    issued_at = Column(DateTime(timezone=True), nullable=False, default=now, server_default=func.now())
+    changed_at = Column(DateTime(timezone=True))

@@ -5,6 +5,7 @@ export interface User {
   phone: string;
   role: string;
   doctor_id?: number | null;
+  must_change_password?: boolean;
   document_type?: string | null;
   document_masked?: string | null;
   has_document?: boolean;

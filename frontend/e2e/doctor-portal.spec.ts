@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 test("paciente y médico comparten reserva, finalización y cancelación persistentes", async ({
@@ -9,7 +10,7 @@ test("paciente y médico comparten reserva, finalización y cancelación persist
   test.setTimeout(150000);
   test.skip(
     process.env.E2E_LIFECYCLE_ISOLATED !== "true" ||
-      process.env.E2E_DOCTOR_CONTAINER !== "vitalsync-doctor-check-backend-1",
+      process.env.E2E_DOCTOR_CONTAINER !== "vitalsync-test-backend-1",
     "Solo se permite el stack médico aislado",
   );
   page.setDefaultTimeout(15000);
@@ -80,7 +81,7 @@ test("paciente y médico comparten reserva, finalización y cancelación persist
   ).toBeVisible();
   await page.goto("/login");
   await page.getByLabel("Correo electrónico").fill("medico@vitalsync.demo");
-  await page.getByLabel("Contraseña", { exact: true }).fill("DoctorE2E2026!");
+  await page.getByLabel("Contraseña", { exact: true }).fill(JSON.parse(readFileSync(process.env.E2E_CREDENTIALS_FILE!, "utf8")).legacy.password);
   await page
     .getByRole("button", { name: "Iniciar sesión", exact: true })
     .click();
@@ -216,7 +217,7 @@ test("paciente y médico comparten reserva, finalización y cancelación persist
     clinically_attended: false,
   });
   if (info.project.name === "desktop") {
-    execFileSync("docker", ["restart", "vitalsync-doctor-check-db-1"], {
+    execFileSync("docker", ["restart", "vitalsync-db-1"], {
       timeout: 60000,
     });
     await expect
@@ -231,7 +232,7 @@ test("paciente y médico comparten reserva, finalización y cancelación persist
         { timeout: 45000 },
       )
       .toBe(200);
-    execFileSync("docker", ["restart", "vitalsync-doctor-check-backend-1"], {
+    execFileSync("docker", ["restart", "vitalsync-test-backend-1"], {
       timeout: 60000,
     });
     await expect

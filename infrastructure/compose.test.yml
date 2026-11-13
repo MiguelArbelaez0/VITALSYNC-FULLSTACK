@@ -1,12 +1,24 @@
-# Temporary test stack only; never use the principal external volume.
+# Temporary services in the SAME project; only the separate test database is used.
 services:
-  db:
-    environment:
-      POSTGRES_DB: vitalsync_test
-  backend:
+  test-backend:
+    build: ./backend
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-vitalsync}:${POSTGRES_PASSWORD:-local_demo_change_me}@db:5432/vitalsync_test
-volumes:
-  vitalsync_data:
-    external: false
-    name: ${COMPOSE_PROJECT_NAME}_vitalsync_data
+      DEMO_MODE: "true"
+      COOKIE_SECURE: "false"
+      ALLOWED_ORIGINS: http://localhost:5289
+    ports: ["127.0.0.1:8189:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  test-frontend:
+    build: ./frontend
+    ports: ["127.0.0.1:5289:80"]
+    volumes: ["./infrastructure/nginx.test.conf:/etc/nginx/conf.d/default.conf:ro"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 3s
+      timeout: 3s
+      retries: 15

@@ -51,7 +51,9 @@ for (const appointmentCount of [1, 2]) test(`finalización futura con ${appointm
   await expect(page.getByRole('link', { name: 'Ver historial de cita' })).toBeVisible();
   await expect(page.getByRole('button', { name: /Simular|Finalizar/ })).toHaveCount(0);
   await page.getByRole('link', { name: 'Ver historial de cita' }).click();
-  await expect(page.locator('dd').filter({ hasText: 'Finalizada (simulación)' })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/portal/appointments/${aid}$`));
+  await expect(page.getByRole('heading', { name: 'Detalle de tu cita' })).toBeVisible();
+  await expect(page.getByText('Finalizada (simulación)', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Cancelar cita', exact: true })).toHaveCount(0);
   await page.getByRole('link', { name: '← Volver a Mis citas' }).click();
   await expect(page.locator(`a[href="/portal/appointments/${aid}"]`)).toHaveCount(0);

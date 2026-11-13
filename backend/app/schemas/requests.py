@@ -100,3 +100,17 @@ class Cancel(Input):
     version: int = Field(gt=0)
     reason: str = Field(min_length=3, max_length=500)
     confirmed: Literal[True]
+
+
+class DoctorPasswordChange(Input):
+    current_password: str = Field(min_length=8,max_length=128)
+    new_password: str = Field(min_length=12,max_length=128)
+    confirm_password: str = Field(min_length=12,max_length=128)
+
+    @model_validator(mode='after')
+    def strong_and_matching(self):
+        if self.new_password != self.confirm_password:
+            raise ValueError('Las contraseñas nuevas no coinciden')
+        if not any(c.islower() for c in self.new_password) or not any(c.isupper() for c in self.new_password) or not any(c.isdigit() for c in self.new_password):
+            raise ValueError('La nueva contraseña requiere mayúscula, minúscula y número')
+        return self

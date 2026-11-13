@@ -37,6 +37,8 @@ import {
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 import "./doctor.css";
+import "./clinical.css";
+import { DoctorPasswordForm } from "./DoctorPassword";
 
 const prefix = "/doctor";
 const today = () => dayKey(new Date().toISOString());
@@ -522,7 +524,7 @@ export function DoctorPatients() {
   const detail = useQuery({
     queryKey: ["doctor", "patient", selected],
     queryFn: () =>
-      api<{ id: number; name: string; appointments: MedicalAppointment[] }>(
+      api<{ id: number; name: string; clinical_history_available?: boolean; appointments: MedicalAppointment[] }>(
         prefix + "/patients/" + selected,
       ),
     enabled: selected !== null,
@@ -569,6 +571,7 @@ export function DoctorPatients() {
         <section className="panel medical-agenda">
           <State pending={detail.isPending} error={detail.error}>
             <h2>{detail.data?.name}</h2>
+            {detail.data?.clinical_history_available ? <Go to={`/doctor/patients/${selected}/clinical-history`}>Ver historia clínica</Go> : <p>No hay una historia ficticia disponible para tu relación asistencial actual.</p>}
             <p>Reservas relacionadas con este profesional.</p>
             <AppointmentList items={detail.data?.appointments ?? []} />
           </State>
@@ -653,6 +656,7 @@ export function DoctorProfilePage() {
             {busy ? "Guardando…" : "Guardar biografía"}
           </Button>
         </form>
+        <DoctorPasswordForm />
       </section>
     </div>
   );
