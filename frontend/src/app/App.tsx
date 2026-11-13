@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { Loading, Empty, Go, ErrorBox } from "../components/common";
@@ -26,10 +27,12 @@ import {
 } from "../features/doctor/DoctorPortal";
 import { DoctorClinicalHistory } from "../features/doctor/ClinicalHistory";
 import { DoctorPasswordSetup } from "../features/doctor/DoctorPassword";
+const AdminPortal = lazy(() => import("../features/admin/AdminPortal"));
+const Recover = lazy(() => import("../features/admin/Recover"));
 export function Protected({
   role = "PATIENT",
 }: {
-  role?: "PATIENT" | "DOCTOR";
+  role?: "PATIENT" | "DOCTOR" | "ADMIN";
 }) {
   const { user, loading, error } = useAuth();
   if (loading) return <Loading />;
@@ -39,18 +42,22 @@ export function Protected({
     return (
       <Empty
         title={
-          role === "PATIENT"
-            ? "Acceso exclusivo para pacientes"
-            : "Acceso exclusivo para médicos"
+          role === "ADMIN"
+            ? "Acceso exclusivo para administradores"
+            : role === "PATIENT"
+              ? "Acceso exclusivo para pacientes"
+              : "Acceso exclusivo para médicos"
         }
       >
         <Go
           to={
-            user.role === "DOCTOR"
-              ? "/doctor"
-              : user.role === "PATIENT"
-                ? "/portal"
-                : "/"
+            user.role === "ADMIN"
+              ? "/admin"
+              : user.role === "DOCTOR"
+                ? "/doctor"
+                : user.role === "PATIENT"
+                  ? "/portal"
+                  : "/"
           }
         >
           Volver a mi espacio
@@ -67,7 +74,8 @@ export function Protected({
         }
       />
     );
-  if (role === "DOCTOR" && user.must_change_password) return <DoctorPasswordSetup/>;
+  if (role === "DOCTOR" && user.must_change_password)
+    return <DoctorPasswordSetup />;
   return <Outlet />;
 }
 export function App() {
@@ -76,6 +84,34 @@ export function App() {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Auth />} />
       <Route path="/register" element={<Auth register />} />
+      <Route
+        path="/recover"
+        element={
+          <Suspense fallback={<Loading />}>
+            <Recover />
+          </Suspense>
+        }
+      />
+      <Route element={<Protected role="ADMIN" />}>
+        <Route path="/admin" element={<Layout admin />}>
+          <Route
+            index
+            element={
+              <Suspense fallback={<Loading />}>
+                <AdminPortal />
+              </Suspense>
+            }
+          />
+          <Route
+            path=":section"
+            element={
+              <Suspense fallback={<Loading />}>
+                <AdminPortal />
+              </Suspense>
+            }
+          />
+        </Route>
+      </Route>
       <Route element={<Protected />}>
         <Route path="/portal" element={<Layout />}>
           <Route index element={<Dashboard />} />
@@ -100,7 +136,10 @@ export function App() {
           <Route path="appointments/:id" element={<DoctorDetail />} />
           <Route path="appointments/:id/teleconsult" element={<DoctorRoom />} />
           <Route path="patients" element={<DoctorPatients />} />
-          <Route path="patients/:id/clinical-history" element={<DoctorClinicalHistory/>} />
+          <Route
+            path="patients/:id/clinical-history"
+            element={<DoctorClinicalHistory />}
+          />
           <Route path="profile" element={<DoctorProfilePage />} />
           <Route path="availability" element={<DoctorAvailability />} />
         </Route>

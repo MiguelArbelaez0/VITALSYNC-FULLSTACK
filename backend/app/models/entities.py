@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, ForeignKey, Text, UniqueConstraint, CheckConstraint, Index, func
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship
 from app.db.session import Base
 
 def now():
@@ -167,6 +168,7 @@ class Payment(Base):
 
 class Appointment(Base):
     __tablename__ = 'appointments'
+    snapshot = relationship('AppointmentSnapshot', uselist=False, lazy='select')
     id = Column(Integer, primary_key=True)
     code = Column(String(30), nullable=False, unique=True)
     patient_id = Column(Integer, ForeignKey('patients.id'), nullable=False, index=True)
@@ -325,3 +327,121 @@ class DoctorCredentialState(Base):
     must_change_password = Column(Boolean, nullable=False, default=True, server_default='true')
     issued_at = Column(DateTime(timezone=True), nullable=False, default=now, server_default=func.now())
     changed_at = Column(DateTime(timezone=True))
+
+
+# Administrative metadata contains no clinical content and never changes historical rows.
+class PlanRule(Base):
+    __tablename__='plan_rules'
+    plan_id=Column(Integer,ForeignKey('plans.id'),primary_key=True)
+    version=Column(Integer,nullable=False,default=1,server_default='1')
+    virtual_copay=Column(Integer)
+    onsite_copay=Column(Integer)
+    consultation_limit=Column(Integer)
+    benefits=Column(Text,nullable=False,default='',server_default='')
+    restrictions=Column(Text,nullable=False,default='',server_default='')
+    __table_args__=(CheckConstraint('(virtual_copay IS NULL OR virtual_copay >= 0) AND (onsite_copay IS NULL OR onsite_copay >= 0) AND (consultation_limit IS NULL OR consultation_limit > 0) AND version > 0',name='ck_plan_rules'),)
+
+class SubscriptionTerms(Base):
+    __tablename__='subscription_terms'
+    patient_id=Column(Integer,ForeignKey('patient_plans.patient_id'),primary_key=True)
+    plan_id=Column(Integer,ForeignKey('plans.id'),nullable=False)
+    terms=Column(JSONB,nullable=False)
+    contracted_at=Column(DateTime(timezone=True),nullable=False,default=now,server_default=func.now())
+
+class PaymentTerms(Base):
+    __tablename__='payment_terms'
+    payment_id=Column(Integer,ForeignKey('payments.id'),primary_key=True)
+    terms=Column(JSONB,nullable=False)
+    recorded_at=Column(DateTime(timezone=True),nullable=False,default=now,server_default=func.now())
+
+class AppointmentSnapshot(Base):
+    __tablename__='appointment_snapshots'
+    appointment_id=Column(Integer,ForeignKey('appointments.id'),primary_key=True)
+    terms=Column(JSONB,nullable=False)
+
+class PlanRevision(Base):
+    __tablename__='plan_revisions'
+    id=Column(Integer,primary_key=True)
+    plan_id=Column(Integer,ForeignKey('plans.id'),nullable=False,index=True)
+    version=Column(Integer,nullable=False)
+    terms=Column(JSONB,nullable=False)
+    actor_id=Column(Integer,ForeignKey('users.id'))
+    reason=Column(Text,nullable=False)
+    created_at=Column(DateTime(timezone=True),nullable=False,default=now,server_default=func.now())
+    __table_args__=(UniqueConstraint('plan_id','version',name='uq_plan_revision'),)
+
+class AdminEvent(Base):
+    __tablename__='admin_events'
+    id=Column(Integer,primary_key=True)
+    actor_id=Column(Integer,ForeignKey('users.id'),index=True)
+    action=Column(String(60),nullable=False,index=True)
+    resource=Column(String(30),nullable=False)
+    entity_id=Column(Integer)
+    reason=Column(Text,nullable=False)
+    details=Column(JSONB,nullable=False,default=dict)
+    created_at=Column(DateTime(timezone=True),nullable=False,default=now,server_default=func.now(),index=True)
+
+class AdminPermission(Base):
+    __tablename__='admin_permissions'
+    user_id=Column(Integer,ForeignKey('users.id'),primary_key=True)
+    scopes=Column(JSONB,nullable=False)
+    __table_args__=(CheckConstraint("jsonb_typeof(scopes) = 'array'",name='ck_admin_scopes'),)
+
+class RecoveryRequest(Base):
+    __tablename__='recovery_requests'
+    id=Column(Integer,primary_key=True)
+    user_id=Column(Integer,ForeignKey('users.id'),nullable=False,index=True)
+    requested_by=Column(Integer,ForeignKey('users.id'),nullable=False)
+    reason=Column(Text,nullable=False)
+    status=Column(String(12),nullable=False,default='PENDING')
+    token_hash=Column(String(64),unique=True)
+    expires_at=Column(DateTime(timezone=True))
+    consumed_at=Column(DateTime(timezone=True))
+    created_at=Column(DateTime(timezone=True),nullable=False,default=now,server_default=func.now())
+    __table_args__=(CheckConstraint("status IN ('PENDING','ISSUED','USED','REVOKED')",name='ck_recovery_status'),)
+
+class RefundRequest(Base):
+    __tablename__='refund_requests'
+    id=Column(Integer,primary_key=True)
+    payment_id=Column(Integer,ForeignKey('payments.id'),nullable=False,unique=True)
+    amount=Column(Integer,nullable=False)
+    status=Column(String(16),nullable=False,default='REQUESTED')
+    version=Column(Integer,nullable=False,default=1)
+    requested_by=Column(Integer,ForeignKey('users.id'),nullable=False)
+    reason=Column(Text,nullable=False)
+    created_at=Column(DateTime(timezone=True),nullable=False,default=now,server_default=func.now())
+    __table_args__=(CheckConstraint("status IN ('REQUESTED','REVIEWING','APPROVED','REJECTED','AUTHORIZED','PROCESSED','FAILED') AND amount > 0 AND version > 0",name='ck_refund_request'),)
+
+class RefundTransition(Base):
+    __tablename__='refund_transitions'
+    id=Column(Integer,primary_key=True)
+    refund_id=Column(Integer,ForeignKey('refund_requests.id'),nullable=False,index=True)
+    actor_id=Column(Integer,ForeignKey('users.id'),nullable=False)
+    previous_status=Column(String(16))
+    status=Column(String(16),nullable=False)
+    reason=Column(Text,nullable=False)
+    operation_key=Column(String(80),nullable=False,unique=True)
+    created_at=Column(DateTime(timezone=True),nullable=False,default=now,server_default=func.now())
+
+class AppointmentReschedule(Base):
+    __tablename__='appointment_reschedules'
+    id=Column(Integer,primary_key=True)
+    previous_id=Column(Integer,ForeignKey('appointments.id'),nullable=False,unique=True)
+    replacement_id=Column(Integer,ForeignKey('appointments.id'),nullable=False,unique=True)
+    actor_id=Column(Integer,ForeignKey('users.id'),nullable=False)
+    reason=Column(Text,nullable=False)
+    created_at=Column(DateTime(timezone=True),nullable=False,default=now,server_default=func.now())
+    __table_args__=(CheckConstraint('previous_id <> replacement_id',name='ck_distinct_reschedule'),)
+
+
+class BlockRelease(Base):
+    __tablename__='block_releases'
+    block_id=Column(Integer,ForeignKey('doctor_blocks.id'),primary_key=True)
+    actor_id=Column(Integer,ForeignKey('users.id'),nullable=False)
+    reason=Column(Text,nullable=False)
+    created_at=Column(DateTime(timezone=True),nullable=False,default=now,server_default=func.now())
+
+class AppSetting(Base):
+    __tablename__='app_settings'
+    key=Column(String(40),primary_key=True)
+    value=Column(JSONB,nullable=False)

@@ -11,7 +11,8 @@ def doctor_dict(d, s):
     return dict(id=d.id, name=d.name, specialty_id=s.id, specialty=s.name, bio=d.bio, enabled=d.enabled, modalities=d.modalities)
 
 def appointment_dict(a, d, s, p):
-    return dict(id=a.id, code=a.code, patient_id=a.patient_id, doctor=d.name, specialty=s.name, plan=p.name,
+    captured=a.snapshot.terms if a.snapshot else {}
+    return dict(id=a.id, code=a.code, patient_id=a.patient_id, doctor=captured.get('doctor',d.name), specialty=captured.get('specialty',s.name), plan=captured.get('plan',p.name),
         starts_at=a.starts_at, ends_at=a.ends_at, modality=a.modality, status=a.status, version=a.version,
         copay=a.copay, cancelled_at=a.cancelled_at, cancellation_reason=a.cancellation_reason,
         economic_review=a.economic_review, attended_at=a.attended_at, incidence_at=a.incidence_at,

@@ -13,11 +13,15 @@ from app.models.entities import *
 from app.schemas.requests import Login, Register, Profile, PaymentInput, Reconcile, HoldInput, Cancel, CancelPlanInput, TeleconsultationStatus
 from app.repositories.queries import *
 from app.services import booking, payments, plans as plan_services, teleconsultations
-from app.services import teleconsultation
+from app.services import teleconsultation, plan_terms as plan_services_terms
 from app.routers.doctor import router as doctor_router
+from app.routers.admin import router as admin_router
+from app.routers.recovery import router as recovery_router
 
 app = FastAPI(title='VITALSYNC · Portal del paciente', version='1.0.0')
 app.include_router(doctor_router)
+app.include_router(admin_router)
+app.include_router(recovery_router)
 PRIVACY_NOTICE_VERSION = 'VITALSYNC-PRIVACIDAD-2026-11-v1'
 
 @app.middleware('http')
@@ -26,7 +30,14 @@ async def browser_security(request: Request, call_next):
         origin = request.headers.get('origin')
         if (origin and origin not in ALLOWED_ORIGINS) or request.headers.get('sec-fetch-site') == 'cross-site':
             return JSONResponse(status_code=403, content={'detail': 'Origen no autorizado'})
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception as error:
+        import logging
+        logging.getLogger('vitalsync').error('Error inesperado (%s)',type(error).__name__)
+        response=JSONResponse(status_code=500,content={'detail':'No se pudo completar la operación. Actualiza e inténtalo de nuevo.'})
+    from app.services.security_audit import record
+    record(request,response.status_code)
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['Referrer-Policy'] = 'same-origin'
     response.headers['Cache-Control'] = 'no-store'
@@ -124,6 +135,9 @@ def login(data: Login, response: Response, db: Session = Depends(get_db, scope='
         raise HTTPException(403, 'Esta cuenta no está disponible. Contacta al equipo de VITALSYNC.')
     if user.role == 'DOCTOR':
         doctor_for_user(db, user)
+    elif user.role=='ADMIN':
+        from app.services.admin_portal import audit
+        audit(db,user,'ADMIN_LOGIN','session')
     elif user.role != 'PATIENT' or not db.get(Patient, user.id):
         raise HTTPException(403, 'El portal para este rol todavía no está disponible')
     create_session(db, user, response)
@@ -185,7 +199,7 @@ def my_plan(db, uid):
     ).all()
     return {
         'status': status,
-        'plan': db.get(Plan, pp.plan_id),
+        'plan': dict(plan_services_terms.subscription(db,pp),catalog_enabled=db.get(Plan,pp.plan_id).enabled),
         'expires_at': pp.expires_at,
         'cancelled_at': pp.cancelled_at,
         'cancelled_by': pp.cancelled_by,
@@ -208,7 +222,7 @@ def my_plan(db, uid):
 
 @app.get('/api/plans')
 def plans(db: Session = Depends(get_db, scope='function')):
-    return db.scalars(select(Plan).where(Plan.enabled).order_by(Plan.price)).all()
+    return [plan_services_terms.catalog(db,p) for p in db.scalars(select(Plan).where(Plan.enabled).order_by(Plan.price))]
 
 @app.get('/api/my-plan')
 def get_plan(user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):

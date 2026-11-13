@@ -1,5 +1,6 @@
 """Operación administrativa local explícita e idempotente. Nunca restablece datos."""
 from datetime import datetime, timedelta
+import secrets
 from zoneinfo import ZoneInfo
 from sqlalchemy import select, text
 from app.db.session import SessionLocal
@@ -14,7 +15,7 @@ def seed():
         db.execute(text('SELECT pg_advisory_xact_lock(861991)'))
         admin = db.scalar(select(User).where(User.email == 'admin@vitalsync.demo'))
         if not admin:
-            admin = User(email='admin@vitalsync.demo', name='Administrador de demostración', password_hash=passwords.hash('AdminDemo2026!'), role='ADMIN')
+            admin = User(email='admin@vitalsync.demo', name='Administrador de demostración', password_hash=passwords.hash(secrets.token_urlsafe(48)), role='ADMIN')
             db.add(admin)
             db.flush()
         if not db.scalar(select(User).where(User.email == 'paciente@vitalsync.demo')):

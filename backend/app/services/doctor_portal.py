@@ -51,7 +51,7 @@ def history(db, a):
         select(StatusHistory).where(StatusHistory.appointment_id == a.id).order_by(StatusHistory.id))]
 
 
-def cancel(db, doctor, user, appointment_id, data):
+def cancel(db, doctor, user, appointment_id, data, administrative=False):
     candidate = owned(db, doctor, appointment_id)
     # Same lock order as patient bookings/lifecycle: patient, appointment, professional.
     booking.lock_patient(db, candidate.patient_id)
@@ -73,8 +73,8 @@ def cancel(db, doctor, user, appointment_id, data):
         vc.status = 'CANCELADA'
         vc.updated_at = a.cancelled_at
     db.add(StatusHistory(appointment_id=a.id, status=a.status, author_id=user.id,
-                         reason=f'Cancelación médica · {previous} → {a.status} · {data.reason}'))
-    db.add(AuditEvent(actor_id=user.id, action='DOCTOR_APPOINTMENT_CANCELLED', entity_id=a.id))
+                         reason=f'Cancelación {"administrativa" if administrative else "médica"} · {previous} → {a.status} · {data.reason}'))
+    db.add(AuditEvent(actor_id=user.id, action='ADMIN_APPOINTMENT_CANCELLED' if administrative else 'DOCTOR_APPOINTMENT_CANCELLED', entity_id=a.id))
     booking.notify(db, a.patient_id, f'El médico {doctor.name} canceló tu cita {a.code}. Motivo: {data.reason}. Contacta a VITALSYNC para gestionar una nueva reserva.' +
                    (' El copago queda pendiente de gestión económica; no se realizó una devolución.' if a.economic_review else ''))
     db.flush()

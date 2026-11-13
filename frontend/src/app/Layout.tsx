@@ -1,5 +1,10 @@
 import { NavLink, Outlet, Link } from "react-router-dom";
 import {
+  CreditCard,
+  Settings,
+  FileClock,
+  Layers,
+  Users,
   Bell,
   Clock3,
   Stethoscope,
@@ -31,7 +36,24 @@ const doctorNavigation = [
   { to: "/doctor/availability", icon: Clock3, label: "Disponibilidad" },
   { to: "/doctor/profile", icon: Stethoscope, label: "Mi perfil" },
 ];
-export function Layout({ doctor = false }: { doctor?: boolean }) {
+const adminNavigation = [
+  { to: "/admin", icon: LayoutDashboard, label: "Dashboard", end: true },
+  { to: "/admin/doctors", icon: Stethoscope, label: "Médicos" },
+  { to: "/admin/patients", icon: Users, label: "Pacientes" },
+  { to: "/admin/appointments", icon: CalendarDays, label: "Citas" },
+  { to: "/admin/availability", icon: Clock3, label: "Disponibilidad" },
+  { to: "/admin/plans", icon: Layers, label: "Planes" },
+  { to: "/admin/payments", icon: CreditCard, label: "Pagos y devoluciones" },
+  { to: "/admin/audit", icon: FileClock, label: "Auditoría" },
+  { to: "/admin/configuration", icon: Settings, label: "Configuración" },
+];
+export function Layout({
+  doctor = false,
+  admin = false,
+}: {
+  doctor?: boolean;
+  admin?: boolean;
+}) {
   const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const [logoutError, setLogoutError] = useState<unknown>(null);
@@ -48,7 +70,11 @@ export function Layout({ doctor = false }: { doctor?: boolean }) {
     }
   }
   return (
-    <div className={"shell " + (doctor ? "doctor-shell" : "")}>
+    <div
+      className={
+        "shell " + (admin ? "admin-shell" : doctor ? "doctor-shell" : "")
+      }
+    >
       <aside className={"sidebar " + (open ? "is-open" : "")}>
         <div className="sidebar-brand">
           <Logo />
@@ -61,10 +87,19 @@ export function Layout({ doctor = false }: { doctor?: boolean }) {
           </button>
         </div>
         <p className="nav-caption">
-          {doctor ? "ESPACIO DEL MÉDICO" : "ESPACIO DEL PACIENTE"}
+          {admin
+            ? "ADMINISTRACIÓN VITALSYNC"
+            : doctor
+              ? "ESPACIO DEL MÉDICO"
+              : "ESPACIO DEL PACIENTE"}
         </p>
         <nav>
-          {(doctor ? doctorNavigation : navigation).map((n) => (
+          {(admin
+            ? adminNavigation
+            : doctor
+              ? doctorNavigation
+              : navigation
+          ).map((n) => (
             <NavLink
               key={n.to}
               to={n.to}
@@ -115,14 +150,22 @@ export function Layout({ doctor = false }: { doctor?: boolean }) {
               <Menu />
             </button>
             <span>
-              {doctor ? "Mi espacio profesional" : "Mi espacio de salud"}
+              {admin
+                ? "Mi espacio administrativo"
+                : doctor
+                  ? "Mi espacio profesional"
+                  : "Mi espacio de salud"}
             </span>
           </div>
           <div className="topbar-right">
             <span className="demo-dot">
-              {doctor ? "Portal médico" : "Entorno de demostración"}
+              {admin
+                ? "Portal administrador"
+                : doctor
+                  ? "Portal médico"
+                  : "Entorno de demostración"}
             </span>
-            {!doctor && (
+            {!doctor && !admin && (
               <Link
                 className="icon-button"
                 to="/portal/notifications"
@@ -133,7 +176,13 @@ export function Layout({ doctor = false }: { doctor?: boolean }) {
             )}
             <span className="divider" />
             <Link
-              to={doctor ? "/doctor/profile" : "/portal/profile"}
+              to={
+                admin
+                  ? "/admin/configuration"
+                  : doctor
+                    ? "/doctor/profile"
+                    : "/portal/profile"
+              }
               className="user-chip"
             >
               <span className="avatar small">
@@ -145,7 +194,9 @@ export function Layout({ doctor = false }: { doctor?: boolean }) {
               </span>
               <span>
                 <strong>{user?.name}</strong>
-                <small>{doctor ? "Médico" : "Paciente"}</small>
+                <small>
+                  {admin ? "Administrador" : doctor ? "Médico" : "Paciente"}
+                </small>
               </span>
             </Link>
           </div>

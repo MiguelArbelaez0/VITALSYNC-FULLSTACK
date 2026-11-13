@@ -1,3 +1,4 @@
+from conftest import ADMIN_TEST_PASSWORD
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 import pytest
@@ -57,8 +58,10 @@ def test_unlinked_disabled_and_admin_accounts_are_refused(client):
     with SessionLocal.begin() as db:
         db.add(User(name='Sin perfil', email='unlinked@example.com', role='DOCTOR', password_hash=passwords.hash(PASSWORD)))
     assert client.post('/api/auth/login', json={'email':'unlinked@example.com','password':PASSWORD}).status_code == 403
-    assert client.post('/api/auth/login', json={'email':'admin@vitalsync.demo','password':'AdminDemo2026!'}).status_code == 403
+    assert client.post('/api/auth/login', json={'email':'admin@vitalsync.demo','password':ADMIN_TEST_PASSWORD}).status_code == 200
     assert client.post('/api/auth/register', json={'role':'DOCTOR'}).status_code == 422
+    assert client.get('/api/doctor/dashboard').status_code == 403
+    client.post('/api/auth/logout')
     assert client.get('/api/doctor/dashboard').status_code == 401
 
 

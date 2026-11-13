@@ -12,6 +12,8 @@ from app.main import app
 from app.db.session import SessionLocal, engine
 from app.models.entities import *
 from app.seed import seed
+from app.core.security import passwords
+ADMIN_TEST_PASSWORD=uuid4().hex+'Aa1!'
 
 @pytest.fixture(scope='session', autouse=True)
 def migrated_database():
@@ -24,6 +26,8 @@ def clean_database(migrated_database):
         tables = ', '.join('"' + t.name + '"' for t in Base.metadata.sorted_tables)
         connection.execute(text(f'TRUNCATE TABLE {tables} RESTART IDENTITY CASCADE'))
     seed()
+    with SessionLocal.begin() as db:
+        db.scalar(select(User).where(User.role=='ADMIN')).password_hash=passwords.hash(ADMIN_TEST_PASSWORD)
 
 @pytest.fixture
 def client():
