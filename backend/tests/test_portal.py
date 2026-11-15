@@ -1,3 +1,4 @@
+from conftest import ADMIN_TEST_PASSWORD, PATIENT_TEST_PASSWORD
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from uuid import uuid4
@@ -181,7 +182,7 @@ def test_disabled_account_cannot_reuse_an_existing_session(patient):
     with SessionLocal.begin() as db:
         db.get(User, uid).status = 'DISABLED'
     assert patient.get('/api/auth/me').status_code == 401
-    assert patient.post('/api/auth/login', json={'email':'paciente@vitalsync.demo','password':'Paciente2026!'}).status_code == 403
+    assert patient.post('/api/auth/login', json={'email':'paciente@vitalsync.demo','password':PATIENT_TEST_PASSWORD}).status_code == 403
 
 @pytest.mark.parametrize('email,password', [('paciente@vitalsync.demo','Incorrecta123!'),('missing@example.com','Incorrecta123!')])
 def test_invalid_login(client,email,password):
@@ -191,7 +192,7 @@ def test_authorization_origin_and_expiry(patient):
     with TestClient(app) as anonymous:
         assert anonymous.get('/api/dashboard').status_code == 401
         assert anonymous.post('/api/holds',json={'availability_id':1}).status_code == 401
-        assert anonymous.post('/api/auth/login',json={'email':'admin@vitalsync.demo','password':'AdminDemo2026!'}).status_code == 403
+        assert anonymous.post('/api/auth/login',json={'email':'admin@vitalsync.demo','password':ADMIN_TEST_PASSWORD}).status_code == 200
     assert patient.post('/api/holds',json={'availability_id':1},headers={'origin':'https://evil.example'}).status_code == 403
     assert patient.post('/api/holds',json={'availability_id':1},headers={'sec-fetch-site':'cross-site'}).status_code == 403
     with SessionLocal.begin() as db:

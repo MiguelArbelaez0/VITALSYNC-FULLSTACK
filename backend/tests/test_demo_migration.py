@@ -5,11 +5,12 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import create_engine, text
 from app.db.session import engine
+from conftest import TEST_DATABASE_NAME
 
 
 def test_upgrade_repairs_legacy_finalized_room_without_changing_scheduled_date():
     schema = 'lifecycle_migration_' + uuid4().hex
-    assert engine.url.database == 'vitalsync_test'
+    assert engine.url.database == TEST_DATABASE_NAME
     with engine.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA "{schema}"'))
         # Shadow the public version table before Alembic inspects search_path.
@@ -54,7 +55,7 @@ def test_upgrade_repairs_legacy_finalized_room_without_changing_scheduled_date()
 ])
 def test_each_divergent_branch_upgrades_to_the_single_merge_head(branch_head):
     schema = 'lifecycle_branch_' + uuid4().hex
-    assert engine.url.database == 'vitalsync_test'
+    assert engine.url.database == TEST_DATABASE_NAME
     with engine.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA "{schema}"'))
         connection.execute(text(f'CREATE TABLE "{schema}".alembic_version (version_num varchar(32) PRIMARY KEY)'))
@@ -88,7 +89,7 @@ def test_each_divergent_branch_upgrades_to_the_single_merge_head(branch_head):
             assert result.returncode == 0, f'alembic upgrade {target} failed:\n{result.stdout}\n{result.stderr}'
         with isolated.connect() as connection:
             revisions = connection.execute(text('SELECT version_num FROM alembic_version')).scalars().all()
-            assert revisions == ['20261117_lifecycle_merge']
+            assert revisions == ['20261120_admin_portal']
             repaired = connection.execute(text('SELECT status,completion_source,simulated_completed_at,starts_at FROM appointments WHERE id=:id'), {'id': appointment_id}).mappings().one()
             assert repaired['status'] == 'ATTENDED' and repaired['completion_source'] == 'DEMO'
             assert repaired['simulated_completed_at'] < repaired['starts_at']

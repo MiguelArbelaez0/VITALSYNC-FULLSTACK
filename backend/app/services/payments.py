@@ -6,6 +6,8 @@ from app.services.booking import lock_patient, owned_hold, valid_hold, fail, not
 def apply_approved(db, user, payment):
     if payment.kind == 'PLAN':
         plan = db.get(Plan, payment.plan_id)
+        from app.services import plan_terms
+        terms=plan_terms.purchase(db,payment,plan)
         pp = db.get(PatientPlan, user.id)
         base = now()
         if pp and pp.plan_id == plan.id and pp.status == 'ACTIVE' and pp.expires_at > base:
@@ -15,9 +17,11 @@ def apply_approved(db, user, payment):
             db.add(pp)
         pp.plan_id = plan.id
         pp.status = 'ACTIVE'
-        pp.expires_at = base + timedelta(days=plan.duration_days)
+        pp.expires_at = base + timedelta(days=terms['duration_days'])
         pp.cancelled_at = None
         pp.cancelled_by = None
+        db.flush()
+        plan_terms.activate(db,pp,terms)
         notify(db, user.id, f'Tu plan {plan.name} está activo. Pago simulado aprobado.')
 
 def pay(db, user, data):
@@ -47,12 +51,16 @@ def pay(db, user, data):
     payment = Payment(patient_id=user.id, kind=data.kind, plan_id=data.target_id if data.kind == 'PLAN' else None, hold_id=data.target_id if data.kind == 'COPAY' else None, amount=amount, status=data.status, idempotency_key=data.idempotency_key)
     db.add(payment)
     db.flush()
+    if payment.kind=='PLAN':
+        from app.services.plan_terms import capture_payment
+        capture_payment(db,payment,plan)
+        db.flush()
     if payment.status == 'APPROVED':
         apply_approved(db, user, payment)
     db.add(AuditEvent(actor_id=user.id, action='SIMULATED_PAYMENT_' + payment.status, entity_id=payment.id))
     return payment
 
-def reconcile(db, user, payment_id, status):
+def reconcile(db, user, payment_id, status, actor=None):
     lock_patient(db, user.id)
     p = db.get(Payment, payment_id)
     if not p or p.patient_id != user.id:
@@ -68,5 +76,5 @@ def reconcile(db, user, payment_id, status):
     p.status = status
     if status == 'APPROVED':
         apply_approved(db, user, p)
-    db.add(AuditEvent(actor_id=user.id, action='PAYMENT_RECONCILED_' + status, entity_id=p.id))
+    db.add(AuditEvent(actor_id=(actor or user).id, action='PAYMENT_RECONCILED_' + status, entity_id=p.id))
     return p

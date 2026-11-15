@@ -29,8 +29,8 @@ const appointment = {
   specialty: "Medicina general",
   patient: "Valentina Torres",
   plan: "Premium",
-  starts_at: "2026-11-12T14:00:00Z",
-  ends_at: "2026-11-12T14:30:00Z",
+  starts_at: new Date(Date.now() + 7 * 86400000).toISOString(),
+  ends_at: new Date(Date.now() + 7 * 86400000 + 1800000).toISOString(),
   copay: 0,
   status: "CONFIRMED",
   version: 1,
@@ -188,7 +188,7 @@ describe("Autenticación y acceso", () => {
       screen.getByLabelText("Correo electrónico"),
       "paciente@vitalsync.demo",
     );
-    await userEvent.type(screen.getByLabelText("Contraseña"), "Paciente2026!");
+    await userEvent.type(screen.getByLabelText("Contraseña"), "SamplePassA1!");
     await userEvent.click(
       screen.getByRole("button", { name: "Iniciar sesión" }),
     );

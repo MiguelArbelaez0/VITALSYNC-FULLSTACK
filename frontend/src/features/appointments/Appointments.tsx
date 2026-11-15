@@ -28,6 +28,7 @@ export function Appointments() {
   const q = useQuery({
     queryKey: ["appointments", tab],
     queryFn: () => api<Appointment[]>("/appointments?view=" + (views[tab] ?? "all")),
+    refetchInterval: 15000,
   });
   const items = q.data
     ?.filter((a) =>
@@ -168,6 +169,7 @@ export function AppointmentDetail() {
   const q = useQuery({
     queryKey: ["appointment", id],
     queryFn: () => api<Appointment>("/appointments/" + id),
+    refetchInterval: 15000,
   });
   const config = useQuery({
     queryKey: ["config"],
@@ -428,6 +430,7 @@ export function Teleconsultation() {
   const q = useQuery({
     queryKey: ["teleconsult", id],
     queryFn: () => api<Appointment>("/appointments/" + id + "/teleconsult"),
+    refetchInterval: 15000,
   });
   async function advance(event: string) {
     setBusy(true);

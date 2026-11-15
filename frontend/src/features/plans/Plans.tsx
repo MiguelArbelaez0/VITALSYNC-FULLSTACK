@@ -170,12 +170,14 @@ export function PaymentControls({
 
 function PlanCardActions({
   contracted,
+  renewable = true,
   variant,
   onRenew,
   onCancel,
   onActivate,
 }: {
   contracted: boolean;
+  renewable?: boolean;
   variant: "default" | "outline";
   onRenew: () => void;
   onCancel: () => void;
@@ -190,9 +192,9 @@ function PlanCardActions({
   }
   return (
     <div className="plan-actions">
-      <Button className="full" variant={variant} onClick={onRenew}>
+      {renewable ? <Button className="full" variant={variant} onClick={onRenew}>
         Renovar plan
-      </Button>
+      </Button> : <p className="notice">Este plan no está disponible para nuevas compras o renovaciones.</p>}
       <Button className="full cancel-plan" variant="outline" onClick={onCancel}>
         Cancelar plan
       </Button>
@@ -220,6 +222,10 @@ export function Plans() {
     queryKey: ["specialties"],
     queryFn: () => api<Specialty[]>("/specialties"),
   });
+  const displayPlans = [...(q.data ?? [])];
+  if (m.data?.status === "ACTIVE" && m.data.plan && !displayPlans.some((p) => p.id === m.data?.plan?.id)) {
+    displayPlans.push(m.data.plan);
+  }
   return (
     <>
       <PageTitle
@@ -277,7 +283,7 @@ export function Plans() {
         <ErrorBox error={q.error} />
       ) : (
         <div className="plans-grid">
-          {q.data.map((p, i) => (
+          {displayPlans.map((p, i) => (
             <article
               className={"plan-card panel " + (i === 1 ? "featured" : "")}
               key={p.id}
@@ -293,9 +299,11 @@ export function Plans() {
                 <small>/ {p.duration_days} días</small>
               </div>
               <span className="copay-line">
-                {p.copay
-                  ? "Copago por cita: " + money(p.copay)
-                  : "Sin copagos por consulta"}
+                {p.modalities.includes("VIRTUAL") && p.modalities.includes("PRESENCIAL") && (p.copays?.VIRTUAL ?? p.copay) !== (p.copays?.PRESENCIAL ?? p.copay)
+                  ? `Copago virtual: ${money(p.copays?.VIRTUAL ?? p.copay)} · Presencial: ${money(p.copays?.PRESENCIAL ?? p.copay)}`
+                  : (p.copays?.VIRTUAL ?? p.copays?.PRESENCIAL ?? p.copay)
+                    ? "Copago por cita: " + money(p.copays?.VIRTUAL ?? p.copays?.PRESENCIAL ?? p.copay)
+                    : "Sin copagos por consulta"}
               </span>
               <hr />
               <ul className="coverage-list">
@@ -313,8 +321,12 @@ export function Plans() {
                 {p.modalities.includes("PRESENCIAL") && <span>✓ Consultas presenciales</span>}
                 {!p.modalities.includes("VIRTUAL") && <span className="coverage-exclusion">No incluye consultas virtuales</span>}
               </div>
+              {!!p.consultation_limit && <p>{p.consultation_limit} consultas por contratación</p>}
+              {!!p.benefits && <p>{p.benefits}</p>}
+              {!!p.restrictions && <p className="coverage-exclusion">{p.restrictions}</p>}
               <PlanCardActions
                 contracted={m.data?.plan?.id === p.id && m.data.status === "ACTIVE"}
+                renewable={p.catalog_enabled !== false}
                 variant={i === 1 ? "default" : "outline"}
                 onRenew={() => { setSelected(p); setSuccess(false); }}
                 onCancel={() => { setCancelTarget(p); setCancelError(null); setCancelMessage(null); }}
@@ -326,9 +338,10 @@ export function Plans() {
       )}
       <ErrorBox error={s.error} />
       <section className="notice">
-        <strong>¿Cómo funciona la renovación?</strong>
+        <strong>Renovación manual · sin cobros automáticos</strong>
         <p>
-          Si renuevas tu mismo plan activo, se agregan 30 días a la vigencia
+          Debes solicitar la renovación y aprobar un nuevo pago. Si renuevas el
+          mismo plan activo, el período configurado se suma a la vigencia
           restante. Si cambias de plan, la nueva cobertura comienza al aprobar
           el pago y reemplaza la anterior.
         </p>

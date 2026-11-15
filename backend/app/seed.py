@@ -1,5 +1,6 @@
 """Operación administrativa local explícita e idempotente. Nunca restablece datos."""
 from datetime import datetime, timedelta
+import secrets
 from zoneinfo import ZoneInfo
 from sqlalchemy import select, text
 from app.db.session import SessionLocal
@@ -14,11 +15,14 @@ def seed():
         db.execute(text('SELECT pg_advisory_xact_lock(861991)'))
         admin = db.scalar(select(User).where(User.email == 'admin@vitalsync.demo'))
         if not admin:
-            admin = User(email='admin@vitalsync.demo', name='Administrador de demostración', password_hash=passwords.hash('AdminDemo2026!'), role='ADMIN')
+            admin = User(email='admin@vitalsync.demo', name='Administrador de demostración', password_hash=passwords.hash(secrets.token_urlsafe(48)), role='ADMIN')
             db.add(admin)
             db.flush()
         if not db.scalar(select(User).where(User.email == 'paciente@vitalsync.demo')):
-            u = User(email='paciente@vitalsync.demo', name='Valentina Torres', password_hash=passwords.hash('Paciente2026!'), role='PATIENT')
+            # Never publish or reuse a shared demo password. Existing accounts are
+            # intentionally left untouched; a new local demo account gets a random
+            # secret and can use the normal recovery flow if interactive access is needed.
+            u = User(email='paciente@vitalsync.demo', name='Valentina Torres', password_hash=passwords.hash(secrets.token_urlsafe(48)), role='PATIENT')
             db.add(u)
             db.flush()
             db.add(Patient(id=u.id, phone='300 123 4567'))
@@ -52,6 +56,13 @@ def seed():
             blocked = (today + timedelta(days=1)).replace(hour=11)
             if not db.scalar(select(DoctorBlock.id).where(DoctorBlock.doctor_id == d.id, DoctorBlock.starts_at == blocked)):
                 db.add(DoctorBlock(doctor_id=d.id, starts_at=blocked, ends_at=blocked + timedelta(minutes=30), reason='Bloqueo administrativo de demostración'))
+        from app.doctor_demo import ensure_demo_doctor
+        ensure_demo_doctor(db)
+        from app.services.clinical_history import seed_histories
+        try:
+            seed_histories(db)
+        except Exception:
+            raise RuntimeError("No se pudo completar el seed clínico; transacción revertida sin registrar contenido clínico") from None
         if not db.scalar(select(AuditEvent.id).where(AuditEvent.action == 'DEVELOPMENT_SEED')):
             db.add(AuditEvent(actor_id=admin.id, action='DEVELOPMENT_SEED'))
 

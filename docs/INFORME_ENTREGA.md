@@ -42,7 +42,7 @@ Se inspeccionaron las capturas reales de dashboard, comprobante e historial en a
 
 Portal: http://localhost:5188. Documentación FastAPI: http://localhost:8088/docs. PostgreSQL: localhost:5488, base y usuario `vitalsync`.
 
-Paciente ficticio: **paciente@vitalsync.demo** / **Paciente2026!**. La cuenta original conserva su plan inactivo, salvo acciones posteriores del usuario. Las pruebas E2E y de persistencia usan cuentas nuevas, sin sobrescribir la cuenta de presentación.
+Paciente ficticio: **paciente@vitalsync.demo**. El seed no publica ni asigna una contraseña compartida en instalaciones nuevas; para la demostración interactiva registra un paciente desde el portal. Las pruebas E2E usan cuentas aisladas y claves aleatorias fuera de Git.
 
 ```powershell
 docker compose up -d --build

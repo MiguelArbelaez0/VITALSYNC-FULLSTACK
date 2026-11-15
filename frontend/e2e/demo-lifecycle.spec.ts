@@ -1,12 +1,13 @@
 import { test, expect } from "@playwright/test";
 import { execFileSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 
 for (const appointmentCount of [1, 2]) test(`finalización futura con ${appointmentCount} citas persiste y actualiza la agenda`, async ({ page }) => {
   test.setTimeout(180000);
   test.skip(process.env.E2E_LIFECYCLE_ISOLATED !== "true", "Requiere backend con base aislada; no usar datos de demostración");
   const request = page.request;
   const email = `lifecycle-${Date.now()}@example.com`;
-  const password = "Paciente2026!";
+  const password = randomBytes(24).toString("hex") + "Aa1!";
   const registered = await request.post('/api/auth/register', { data: {
     given_names: 'Paciente', surnames: 'Prueba Ciclo', document_type: 'CC',
     document_number: String(Date.now()).slice(-10), email, password,
@@ -51,7 +52,9 @@ for (const appointmentCount of [1, 2]) test(`finalización futura con ${appointm
   await expect(page.getByRole('link', { name: 'Ver historial de cita' })).toBeVisible();
   await expect(page.getByRole('button', { name: /Simular|Finalizar/ })).toHaveCount(0);
   await page.getByRole('link', { name: 'Ver historial de cita' }).click();
-  await expect(page.locator('dd').filter({ hasText: 'Finalizada (simulación)' })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/portal/appointments/${aid}$`));
+  await expect(page.getByRole('heading', { name: 'Detalle de tu cita' })).toBeVisible();
+  await expect(page.getByText('Finalizada (simulación)', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Cancelar cita', exact: true })).toHaveCount(0);
   await page.getByRole('link', { name: '← Volver a Mis citas' }).click();
   await expect(page.locator(`a[href="/portal/appointments/${aid}"]`)).toHaveCount(0);

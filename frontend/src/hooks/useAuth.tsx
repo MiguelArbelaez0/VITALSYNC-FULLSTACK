@@ -37,7 +37,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user: q.data ?? null,
         loading: q.isPending,
         error: q.error instanceof ApiError && q.error.status === 401 ? null : q.error,
-        refresh: () => client.invalidateQueries(),
+        refresh: async () => {
+          await client.cancelQueries();
+          client.removeQueries({ predicate: (query) => query.queryKey[0] !== "me" });
+          await client.invalidateQueries({ queryKey: ["me"] });
+        },
         logout: async () => {
           await post("/auth/logout");
           await client.cancelQueries();

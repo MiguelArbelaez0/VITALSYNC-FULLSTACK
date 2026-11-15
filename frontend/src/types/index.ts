@@ -4,6 +4,8 @@ export interface User {
   email: string;
   phone: string;
   role: string;
+  doctor_id?: number | null;
+  must_change_password?: boolean;
   document_type?: string | null;
   document_masked?: string | null;
   has_document?: boolean;
@@ -21,6 +23,13 @@ export interface Plan {
   duration_days: number;
   specialty_ids: number[];
   modalities: Modality[];
+  enabled?: boolean;
+  catalog_enabled?: boolean;
+  copays?: Partial<Record<Modality, number>>;
+  consultation_limit?: number | null;
+  benefits?: string;
+  restrictions?: string;
+  version?: number;
 }
 export type Modality = 'PRESENCIAL' | 'VIRTUAL';
 export interface Membership {
@@ -143,4 +152,21 @@ export interface Config {
   teleconsult_room_open_minutes: number;
   teleconsult_wait_grace_minutes: number;
   timezone: string;
+}
+
+export interface MedicalProfile {
+  id: number; name: string; specialty: string; bio: string; modalities: Modality[];
+  editable_fields: string[]; institutional_fields: string[];
+}
+export interface MedicalAppointment {
+  id: number; code: string; patient_id: number; patient: string; doctor: string; specialty: string;
+  starts_at: string; ends_at: string; duration_minutes: number; modality: Modality; status: string; version: number;
+  completion_source: string | null; simulated_completed_at: string | null; clinically_attended: boolean;
+  cancelled_at: string | null; cancellation_reason: string | null; history?: NonNullable<Appointment['history']>;
+  virtual_status?: string; virtual_state?: Appointment['virtual_state']; demo_mode?: boolean;
+}
+export interface MedicalDashboard {
+  doctor: MedicalProfile; date: string; timezone: string;
+  metrics: {total: number; presencial: number; virtual: number; pending: number; completed: number};
+  next_appointment: MedicalAppointment | null; agenda: MedicalAppointment[];
 }

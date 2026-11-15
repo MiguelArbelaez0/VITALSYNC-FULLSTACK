@@ -1,0 +1,51 @@
+{
+  "result": "PASS",
+  "accounts": [
+    {
+      "doctor_id": 1,
+      "email": "medico-1@vitalsync.demo",
+      "authenticated": true,
+      "must_change_password": true
+    },
+    {
+      "doctor_id": 2,
+      "email": "medico@vitalsync.demo",
+      "authenticated": true,
+      "must_change_password": false
+    },
+    {
+      "doctor_id": 3,
+      "email": "medico-3@vitalsync.demo",
+      "authenticated": true,
+      "must_change_password": true
+    },
+    {
+      "doctor_id": 4,
+      "email": "medico-4@vitalsync.demo",
+      "authenticated": true,
+      "must_change_password": true
+    },
+    {
+      "doctor_id": 5,
+      "email": "medico-5@vitalsync.demo",
+      "authenticated": true,
+      "must_change_password": true
+    }
+  ],
+  "legacy_doctor_modules_verified": true,
+  "treating_doctor_history_read": true,
+  "encounter_read": true,
+  "patient_clinical_denied": true,
+  "unrelated_patient_denied": true,
+  "credentials_returned_by_api": false,
+  "passwords_changed": 0,
+  "clinical_audit": {
+    "actor_verified": true,
+    "timestamps_verified": true,
+    "doctor_password_hashes_argon2": true,
+    "counts": {
+      "CLINICAL_HISTORY_VIEWED": 1,
+      "CLINICAL_ENCOUNTER_VIEWED": 1
+    }
+  }
+}

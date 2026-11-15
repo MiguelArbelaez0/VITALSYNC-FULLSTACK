@@ -17,14 +17,21 @@ def lock_doctor(db, doctor_id):
         fail('El médico no está disponible. Selecciona otro médico')
     return d
 
-def active_plan(db, patient_id, specialty_id, modality='PRESENCIAL'):
+def active_plan(db, patient_id, specialty_id, modality='PRESENCIAL', exclude_hold=None, for_ends_at=None):
     pp = db.get(PatientPlan, patient_id)
     if not pp or pp.status != 'ACTIVE':
         fail('Debes activar tu plan para solicitar una cita médica')
     if pp.expires_at <= now():
         fail('Tu plan ha vencido. Debes renovarlo para continuar')
-    plan = db.get(Plan, pp.plan_id)
-    if not plan.enabled or specialty_id not in plan.specialty_ids:
+    if for_ends_at is not None and for_ends_at > pp.expires_at:
+        fail('La cita debe finalizar antes del vencimiento de tu cobertura')
+    from app.services import plan_terms
+    from types import SimpleNamespace
+    terms=plan_terms.subscription(db,pp)
+    plan=SimpleNamespace(**terms)
+    plan.copay=terms.get('copays',{}).get(modality,plan.copay)
+    plan_terms.quota(db,patient_id,terms,exclude_hold)
+    if specialty_id not in plan.specialty_ids:
         fail('Tu plan no cubre esta especialidad. Consulta otro plan o especialidad')
     if modality not in plan.modalities:
         if modality == 'VIRTUAL':
@@ -38,7 +45,7 @@ def overlaps(model, start, end):
 def available(db, slot, patient_id=None, exclude_hold=None):
     if not slot.published or slot.starts_at <= now():
         return False
-    if db.scalar(select(DoctorBlock.id).where(DoctorBlock.doctor_id == slot.doctor_id, overlaps(DoctorBlock, slot.starts_at, slot.ends_at)).limit(1)):
+    if db.scalar(select(DoctorBlock.id).where(DoctorBlock.doctor_id == slot.doctor_id, ~DoctorBlock.id.in_(select(BlockRelease.block_id)), overlaps(DoctorBlock, slot.starts_at, slot.ends_at)).limit(1)):
         return False
     appointment_filter = Appointment.doctor_id == slot.doctor_id
     hold_filter = Hold.doctor_id == slot.doctor_id
@@ -58,13 +65,14 @@ def create_hold(db, user, slot_id, modality='PRESENCIAL'):
     if not slot:
         fail('Horario no encontrado', 404)
     doctor = lock_doctor(db, slot.doctor_id)
+    slot=db.get(Availability,slot_id,populate_existing=True)
     if modality not in doctor.modalities:
         fail(f'El médico no ofrece citas {modality.lower()}. Selecciona otro médico')
     if modality not in slot.modalities:
         fail(f'Este horario no está publicado para citas {modality.lower()}. Selecciona otro turno')
     if not available(db, slot, user.id):
         fail('El horario está ocupado, bloqueado o retenido. Selecciona otra fecha u horario')
-    plan = active_plan(db, user.id, doctor.specialty_id, modality)
+    plan = active_plan(db, user.id, doctor.specialty_id, modality, for_ends_at=slot.ends_at)
     h = Hold(patient_id=user.id, doctor_id=doctor.id, availability_id=slot.id, plan_id=plan.id, starts_at=slot.starts_at, ends_at=slot.ends_at, expires_at=now() + timedelta(minutes=HOLD_MINUTES), copay=plan.copay, modality=modality)
     db.add(h)
     db.flush()
@@ -83,7 +91,7 @@ def valid_hold(db, user, h):
     doctor = lock_doctor(db, h.doctor_id)
     if h.modality not in doctor.modalities:
         fail('El médico ya no ofrece esta modalidad')
-    plan = active_plan(db, user.id, doctor.specialty_id, h.modality)
+    plan = active_plan(db, user.id, doctor.specialty_id, h.modality,h.id,h.ends_at)
     if plan.id != h.plan_id or plan.copay != h.copay:
         fail('Tu plan ha cambiado. Libera la retención y selecciona nuevamente el horario')
     slot = db.get(Availability, h.availability_id)
@@ -107,6 +115,8 @@ def confirm(db, user, hold_id):
     h.status = 'CONFIRMED'
     db.add(a)
     db.flush()
+    from app.services.plan_terms import record_appointment
+    record_appointment(db,a)
     db.add(StatusHistory(appointment_id=a.id, status='CONFIRMED', author_id=user.id, reason='Confirmación del paciente'))
     if a.modality == 'VIRTUAL':
         db.add(VirtualConsultation(appointment_id=a.id, patient_id=a.patient_id, doctor_id=a.doctor_id))

@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint, CheckConstraint, Index, func
+from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, ForeignKey, Text, UniqueConstraint, CheckConstraint, Index, func
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship
 from app.db.session import Base
 
 def now():
@@ -60,6 +61,13 @@ class Doctor(Base):
         CheckConstraint("jsonb_typeof(modalities) = 'array' AND modalities <> '[]'::jsonb AND modalities <@ '[\"PRESENCIAL\",\"VIRTUAL\"]'::jsonb", name='ck_doctors_modalities'),
         Index('ix_doctors_modalities_gin', 'modalities', postgresql_using='gin'),
     )
+
+class DoctorAccount(Base):
+    __tablename__ = 'doctor_accounts'
+    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
+    doctor_id = Column(Integer, ForeignKey('doctors.id'), nullable=False)
+    __table_args__ = (UniqueConstraint('doctor_id', name='uq_doctor_accounts_doctor_id'),)
+
 
 class Availability(Base):
     __tablename__ = 'doctor_availability'
@@ -160,6 +168,7 @@ class Payment(Base):
 
 class Appointment(Base):
     __tablename__ = 'appointments'
+    snapshot = relationship('AppointmentSnapshot', uselist=False, lazy='select')
     id = Column(Integer, primary_key=True)
     code = Column(String(30), nullable=False, unique=True)
     patient_id = Column(Integer, ForeignKey('patients.id'), nullable=False, index=True)
@@ -239,3 +248,200 @@ class AuditEvent(Base):
     action = Column(String(60), nullable=False)
     entity_id = Column(Integer)
     created_at = Column(DateTime(timezone=True), default=now, nullable=False)
+
+
+# Academic clinical data is isolated from the general patient/account projection.
+class DemoPatient(Base):
+    __tablename__ = 'demo_patients'
+    patient_id = Column(Integer, ForeignKey('patients.id'), primary_key=True)
+    source = Column(String(32), nullable=False)
+    confirmed_by = Column(Integer, ForeignKey('users.id'), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=now, server_default=func.now())
+    __table_args__ = (CheckConstraint("source IN ('BUILTIN_SEED','OPERATOR_CONFIRMED')", name='ck_demo_patient_source'),)
+
+
+class ClinicalHistory(Base):
+    __tablename__ = 'clinical_histories'
+    id = Column(Integer, primary_key=True)
+    patient_id = Column(Integer, ForeignKey('demo_patients.patient_id'), nullable=False, unique=True)
+    demo_marker = Column(String(80), nullable=False, default='DATOS FICTICIOS DE DEMOSTRACIÓN', server_default='DATOS FICTICIOS DE DEMOSTRACIÓN')
+    birth_date = Column(Date)
+    demographic_note = Column(Text)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=now, server_default=func.now())
+    __table_args__ = (CheckConstraint("demo_marker = 'DATOS FICTICIOS DE DEMOSTRACIÓN'", name='ck_clinical_history_demo'),
+                      CheckConstraint('birth_date IS NULL OR birth_date <= CURRENT_DATE',name='ck_clinical_birth_date'))
+
+
+class ClinicalBackground(Base):
+    __tablename__ = 'clinical_backgrounds'
+    id = Column(Integer, primary_key=True)
+    history_id = Column(Integer, ForeignKey('clinical_histories.id'), nullable=False, index=True)
+    category = Column(String(20), nullable=False)
+    description = Column(Text, nullable=False)
+    __table_args__ = (UniqueConstraint('history_id', 'category', name='uq_clinical_background_category'),
+                      CheckConstraint("category IN ('PERSONAL','FAMILY','SURGICAL','PREVIOUS_DISEASE')", name='ck_clinical_background_category'))
+
+
+class ClinicalAllergy(Base):
+    __tablename__ = 'clinical_allergies'
+    id = Column(Integer, primary_key=True)
+    history_id = Column(Integer, ForeignKey('clinical_histories.id'), nullable=False, index=True)
+    substance = Column(String(160), nullable=False)
+    reaction = Column(Text, nullable=False)
+    __table_args__ = (UniqueConstraint('history_id', 'substance', name='uq_clinical_allergy'),)
+
+
+class ClinicalMedication(Base):
+    __tablename__ = 'clinical_medications'
+    id = Column(Integer, primary_key=True)
+    history_id = Column(Integer, ForeignKey('clinical_histories.id'), nullable=False, index=True)
+    name = Column(String(160), nullable=False)
+    note = Column(Text, nullable=False)
+    status = Column(String(16), nullable=False, default='CURRENT')
+    __table_args__ = (UniqueConstraint('history_id', 'name', name='uq_clinical_medication'),
+                      CheckConstraint("status IN ('CURRENT','PREVIOUS')", name='ck_clinical_medication_status'))
+
+
+class ClinicalEncounter(Base):
+    __tablename__ = 'clinical_encounters'
+    id = Column(Integer, primary_key=True)
+    history_id = Column(Integer, ForeignKey('clinical_histories.id'), nullable=False)
+    doctor_id = Column(Integer, ForeignKey('doctors.id'), nullable=False, index=True)
+    specialty_id = Column(Integer, ForeignKey('specialties.id'), nullable=False)
+    appointment_id = Column(Integer, ForeignKey('appointments.id'), unique=True)
+    seed_key = Column(String(40), nullable=False)
+    occurred_at = Column(DateTime(timezone=True), nullable=False)
+    reason = Column(Text, nullable=False)
+    observations = Column(Text, nullable=False)
+    diagnosis = Column(Text, nullable=False)
+    recommendations = Column(Text, nullable=False)
+    vitals = Column(JSONB, nullable=False, default=dict)
+    __table_args__ = (UniqueConstraint('history_id', 'seed_key', name='uq_clinical_encounter_seed'),
+                      CheckConstraint("jsonb_typeof(vitals) = 'object'", name='ck_clinical_encounter_vitals'),
+                      Index('ix_clinical_encounters_history_date', 'history_id', 'occurred_at'))
+
+
+class DoctorCredentialState(Base):
+    __tablename__ = 'doctor_credential_states'
+    user_id = Column(Integer, ForeignKey('doctor_accounts.user_id'), primary_key=True)
+    must_change_password = Column(Boolean, nullable=False, default=True, server_default='true')
+    issued_at = Column(DateTime(timezone=True), nullable=False, default=now, server_default=func.now())
+    changed_at = Column(DateTime(timezone=True))
+
+
+# Administrative metadata contains no clinical content and never changes historical rows.
+class PlanRule(Base):
+    __tablename__='plan_rules'
+    plan_id=Column(Integer,ForeignKey('plans.id'),primary_key=True)
+    version=Column(Integer,nullable=False,default=1,server_default='1')
+    virtual_copay=Column(Integer)
+    onsite_copay=Column(Integer)
+    consultation_limit=Column(Integer)
+    benefits=Column(Text,nullable=False,default='',server_default='')
+    restrictions=Column(Text,nullable=False,default='',server_default='')
+    __table_args__=(CheckConstraint('(virtual_copay IS NULL OR virtual_copay >= 0) AND (onsite_copay IS NULL OR onsite_copay >= 0) AND (consultation_limit IS NULL OR consultation_limit > 0) AND version > 0',name='ck_plan_rules'),)
+
+class SubscriptionTerms(Base):
+    __tablename__='subscription_terms'
+    patient_id=Column(Integer,ForeignKey('patient_plans.patient_id'),primary_key=True)
+    plan_id=Column(Integer,ForeignKey('plans.id'),nullable=False)
+    terms=Column(JSONB,nullable=False)
+    contracted_at=Column(DateTime(timezone=True),nullable=False,default=now,server_default=func.now())
+
+class PaymentTerms(Base):
+    __tablename__='payment_terms'
+    payment_id=Column(Integer,ForeignKey('payments.id'),primary_key=True)
+    terms=Column(JSONB,nullable=False)
+    recorded_at=Column(DateTime(timezone=True),nullable=False,default=now,server_default=func.now())
+
+class AppointmentSnapshot(Base):
+    __tablename__='appointment_snapshots'
+    appointment_id=Column(Integer,ForeignKey('appointments.id'),primary_key=True)
+    terms=Column(JSONB,nullable=False)
+
+class PlanRevision(Base):
+    __tablename__='plan_revisions'
+    id=Column(Integer,primary_key=True)
+    plan_id=Column(Integer,ForeignKey('plans.id'),nullable=False,index=True)
+    version=Column(Integer,nullable=False)
+    terms=Column(JSONB,nullable=False)
+    actor_id=Column(Integer,ForeignKey('users.id'))
+    reason=Column(Text,nullable=False)
+    created_at=Column(DateTime(timezone=True),nullable=False,default=now,server_default=func.now())
+    __table_args__=(UniqueConstraint('plan_id','version',name='uq_plan_revision'),)
+
+class AdminEvent(Base):
+    __tablename__='admin_events'
+    id=Column(Integer,primary_key=True)
+    actor_id=Column(Integer,ForeignKey('users.id'),index=True)
+    action=Column(String(60),nullable=False,index=True)
+    resource=Column(String(30),nullable=False)
+    entity_id=Column(Integer)
+    reason=Column(Text,nullable=False)
+    details=Column(JSONB,nullable=False,default=dict)
+    created_at=Column(DateTime(timezone=True),nullable=False,default=now,server_default=func.now(),index=True)
+
+class AdminPermission(Base):
+    __tablename__='admin_permissions'
+    user_id=Column(Integer,ForeignKey('users.id'),primary_key=True)
+    scopes=Column(JSONB,nullable=False)
+    __table_args__=(CheckConstraint("jsonb_typeof(scopes) = 'array'",name='ck_admin_scopes'),)
+
+class RecoveryRequest(Base):
+    __tablename__='recovery_requests'
+    id=Column(Integer,primary_key=True)
+    user_id=Column(Integer,ForeignKey('users.id'),nullable=False,index=True)
+    requested_by=Column(Integer,ForeignKey('users.id'),nullable=False)
+    reason=Column(Text,nullable=False)
+    status=Column(String(12),nullable=False,default='PENDING')
+    token_hash=Column(String(64),unique=True)
+    expires_at=Column(DateTime(timezone=True))
+    consumed_at=Column(DateTime(timezone=True))
+    created_at=Column(DateTime(timezone=True),nullable=False,default=now,server_default=func.now())
+    __table_args__=(CheckConstraint("status IN ('PENDING','ISSUED','USED','REVOKED')",name='ck_recovery_status'),)
+
+class RefundRequest(Base):
+    __tablename__='refund_requests'
+    id=Column(Integer,primary_key=True)
+    payment_id=Column(Integer,ForeignKey('payments.id'),nullable=False,unique=True)
+    amount=Column(Integer,nullable=False)
+    status=Column(String(16),nullable=False,default='REQUESTED')
+    version=Column(Integer,nullable=False,default=1)
+    requested_by=Column(Integer,ForeignKey('users.id'),nullable=False)
+    reason=Column(Text,nullable=False)
+    created_at=Column(DateTime(timezone=True),nullable=False,default=now,server_default=func.now())
+    __table_args__=(CheckConstraint("status IN ('REQUESTED','REVIEWING','APPROVED','REJECTED','AUTHORIZED','PROCESSED','FAILED') AND amount > 0 AND version > 0",name='ck_refund_request'),)
+
+class RefundTransition(Base):
+    __tablename__='refund_transitions'
+    id=Column(Integer,primary_key=True)
+    refund_id=Column(Integer,ForeignKey('refund_requests.id'),nullable=False,index=True)
+    actor_id=Column(Integer,ForeignKey('users.id'),nullable=False)
+    previous_status=Column(String(16))
+    status=Column(String(16),nullable=False)
+    reason=Column(Text,nullable=False)
+    operation_key=Column(String(80),nullable=False,unique=True)
+    created_at=Column(DateTime(timezone=True),nullable=False,default=now,server_default=func.now())
+
+class AppointmentReschedule(Base):
+    __tablename__='appointment_reschedules'
+    id=Column(Integer,primary_key=True)
+    previous_id=Column(Integer,ForeignKey('appointments.id'),nullable=False,unique=True)
+    replacement_id=Column(Integer,ForeignKey('appointments.id'),nullable=False,unique=True)
+    actor_id=Column(Integer,ForeignKey('users.id'),nullable=False)
+    reason=Column(Text,nullable=False)
+    created_at=Column(DateTime(timezone=True),nullable=False,default=now,server_default=func.now())
+    __table_args__=(CheckConstraint('previous_id <> replacement_id',name='ck_distinct_reschedule'),)
+
+
+class BlockRelease(Base):
+    __tablename__='block_releases'
+    block_id=Column(Integer,ForeignKey('doctor_blocks.id'),primary_key=True)
+    actor_id=Column(Integer,ForeignKey('users.id'),nullable=False)
+    reason=Column(Text,nullable=False)
+    created_at=Column(DateTime(timezone=True),nullable=False,default=now,server_default=func.now())
+
+class AppSetting(Base):
+    __tablename__='app_settings'
+    key=Column(String(40),primary_key=True)
+    value=Column(JSONB,nullable=False)

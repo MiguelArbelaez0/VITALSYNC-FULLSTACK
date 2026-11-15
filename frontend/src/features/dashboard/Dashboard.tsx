@@ -24,6 +24,7 @@ export function Dashboard() {
   const q = useQuery({
     queryKey: ["dashboard"],
     queryFn: () => api<DashboardData>("/dashboard"),
+    refetchInterval: 15000,
   });
   if (q.isPending) return <Loading />;
   if (q.error) return <ErrorBox error={q.error} />;

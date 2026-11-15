@@ -1,5 +1,26 @@
 # Validación de la primera entrega
 
+## Auditoría integral final (14 de noviembre de 2026)
+
+La revisión se ejecutó en la rama local `codex/integration-final`, creada desde `46d22ea`; los commits de paciente, médico y administrador ya forman parte de esa línea. No se hizo merge adicional, push ni publicación. Se agregó un flujo local de GitHub Actions en `.github/workflows/ci.yml`; aún no se ejecuta en GitHub porque no se publicó.
+
+| Comprobación | Resultado |
+| --- | --- |
+| Backend completo en PostgreSQL | **158 aprobadas** en `vitalsync_test_audit_*` |
+| Frontend Vitest | **41 aprobadas** |
+| Playwright escritorio y móvil | **16 aprobadas**; paciente, médico, administrador, agenda compartida y teleconsulta |
+| TypeScript y build React | **Aprobados**; aviso no bloqueante por chunk principal de 588.81 kB |
+| Compose / Docker Desktop | Solo el proyecto `vitalsync`; `db`, `backend` y `frontend` saludables |
+| API y rutas SPA | `/api/health` OK; `/login`, `/portal`, `/doctor` y `/admin` responden HTTP 200 |
+| Alembic | `20261120_admin_portal` es la versión aplicada y única cabeza |
+| BD principal / volumen | `vitalsync` sobre `vitalsync_vitalsync_data`; 55 pacientes, 5 médicos, 60 citas y 3 planes |
+| BD de pruebas que ya existía | `vitalsync_test` conservó 15 pacientes, 16 citas y 9 encuentros clínicos |
+| Respaldo previo a la auditoría | PASS: `C:\Users\USUARIO\Desktop\VITALSYNC-RESPALDOS\vitalsync-20261114-231519.dump`, 170332 bytes, SHA-256 `1412751ca0e184e2e9b19c2e85ede60eb800b59d6fed9151b2be70c1b6064e42` |
+
+Los runners ahora crean bases temporales con prefijo `vitalsync_test_audit_` y no truncan bases preexistentes. Las cuatro bases creadas durante esta auditoría se mantienen en PostgreSQL; no se borraron. Al iniciar el backend, la migración ya estaba aplicada y el seed dejó intacta la contraseña del paciente existente. El seed ahora crea una clave aleatoria solo para un usuario paciente nuevo, y las guías actuales no publican contraseñas compartidas.
+
+**Seguridad de credenciales:** al iniciar esta publicación, dos claves de cuentas ficticias encontradas en commits históricos todavía autenticaban. Se rotaron las cuentas existentes de administrador y paciente mediante solicitudes administrativas y enlaces locales de un solo uso. Las claves anteriores ahora reciben HTTP 401 y las nuevas se validaron con roles `ADMIN` y `PATIENT`. El archivo local que contiene las nuevas claves tiene ACL protegida para el usuario de Windows y `SYSTEM`; no forma parte del repositorio. Gitleaks no encontró otros secretos con sus reglas estándar. Los valores antiguos continúan en el historial público, pero ya no permiten acceder a esas cuentas. No se reescribió historia.
+
 ## Actualización: cancelación universal de planes (9 de noviembre de 2026)
 
 La migración `20261112_plan_cancellation` quedó aplicada en PostgreSQL. La nueva ruta `POST /api/my-plan/cancel` se verificó con los cuatro planes de prueba (Básico, Estándar, Premium y un plan añadido durante la prueba). La suite backend completa aprobó **53 pruebas**; el frontend aprobó **17 pruebas unitarias** y **2 recorridos E2E** en escritorio y emulación iPhone 13. Ambos recorridos E2E cancelaron Estándar con la interfaz real y confirmaron desistimiento, resultado persistido, tarjeta actualizada y ausencia de desplazamiento horizontal. `npm run build` y `git diff --check` finalizaron sin errores.
@@ -84,3 +105,29 @@ El script independiente crea una cuenta nueva, aprueba un plan Premium, confirma
 Vite muestra una advertencia de tamaño del bundle principal (~526 kB sin gzip, ~164 kB comprimido); no impide compilar ni ejecutar la demo. Starlette emite una advertencia de deprecación sobre su adaptador de pruebas con httpx; las pruebas ejecutadas pasan. La cobertura aquí es funcional, no una auditoría de seguridad o una prueba de carga sostenida.
 
 No se probaron videollamadas, pagos reales, correos, push, atención médica, módulos administrativos, devoluciones ni despliegue porque no están implementados. Los errores de base de datos se prueban mediante fallo inyectado y rollback, sin dañar la base de demostración. No se utilizó SQLite ni se declaró un navegador real sin ejecutarlo.
+
+## Actualización: portal administrativo integrado (14 de noviembre de 2026)
+
+Se completó en la rama `codex/admin-portal`, usando el proyecto Compose `vitalsync` y la base principal existente. El administrador comparte login y despliegue con los portales de paciente y médico. Se añadieron los nueve módulos descritos en [admin-portal.md](admin-portal.md), controles de permisos por módulo en servidor, auditoría, recuperación privada y protección para que administración no acceda a historias clínicas.
+
+| Comprobación | Resultado |
+| --- | --- |
+| Backend completo, PostgreSQL aislado `vitalsync_test` | **158 aprobadas** |
+| Frontend Vitest / React | **41 aprobadas** |
+| Playwright con build Docker final | **16 aprobadas**: escritorio y emulación móvil Chromium |
+| `npm run build` | TypeScript y Vite aprobados; advertencia de chunk principal de 588.81 kB |
+| Acceso al administrador de la base principal | Login válido, dashboard OK, cierre de sesión OK |
+| Acceso administrativo a historia clínica | **403** |
+| Migración Alembic | `20261120_admin_portal` aplicada; una sola cabeza |
+| Persistencia principal después de reinicio | **PASS**, proyecto `vitalsync`, 3 servicios saludables, 38 tablas verificadas, sesiones de los tres roles persistidas |
+| Agenda entre médico y paciente | 3 citas asignadas verificadas; 3 compartidas en ambas vistas |
+| Filas previas a la migración | Huellas de contenido idénticas para las 24 tablas anteriores |
+| Datos de negocio creados por la validación principal | 0 usuarios, citas o pagos nuevos |
+
+La migración agregó 13 tablas laterales y no actualizó registros existentes de pacientes, médicos, citas, pagos o planes. La base pasó de 24 a 37 tablas de aplicación (38 al contar `alembic_version`; se excluyen sesiones en la comparación de persistencia). Se conservó el volumen `vitalsync_vitalsync_data`; no se ejecutaron comandos de borrado de datos o volúmenes.
+
+El respaldo anterior a la migración se verificó con `pg_restore -l` y SHA-256: `C:\Users\USUARIO\Desktop\VITALSYNC-RESPALDOS\vitalsync-before-admin-20261114-193653.dump` (132398 bytes; `94172414E8A3C15865CFF3DDC022D67BD161C7BEA130F4F6762AC09FE469E268`). Los archivos de huellas anterior/posterior están en esa misma carpeta, fuera del repositorio. El informe automatizado sin credenciales es [admin-portal-validation.json](admin-portal-validation.json).
+
+Las 18 capturas administrativas se generaron sobre cuentas ficticias de la base de pruebas y se revisaron visualmente: [dashboard](screenshots/admin-dashboard-desktop.png), [configuración](screenshots/admin-configuration-desktop.png), [pacientes móvil](screenshots/admin-patients-mobile.png), y el conjunto completo por módulo/tamaño en [admin-portal.md](admin-portal.md). No se guardaron capturas del volumen principal.
+
+El navegador E2E emula móvil con Chromium; no se probó Safari ni un iPhone físico. Permanecen las advertencias no bloqueantes de deprecación de Starlette/httpx y tamaño del bundle principal. No se realizó push.

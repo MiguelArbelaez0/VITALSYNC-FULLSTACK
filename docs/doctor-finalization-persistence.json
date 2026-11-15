@@ -1,0 +1,22 @@
+{
+  "result": "PASS",
+  "project": "vitalsync",
+  "services": [
+    "db",
+    "backend",
+    "frontend"
+  ],
+  "database": "vitalsync",
+  "volume": "vitalsync_vitalsync_data",
+  "roles": [
+    "PATIENT",
+    "DOCTOR"
+  ],
+  "assigned_appointments_verified": 3,
+  "shared_patient_doctor_appointments": 3,
+  "tables_verified": 25,
+  "restart_verified": true,
+  "sessions_persisted": true,
+  "domain_rows_created": 0,
+  "passwords_changed": 0
+}
