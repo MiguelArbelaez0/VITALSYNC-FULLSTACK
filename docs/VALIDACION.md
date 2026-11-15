@@ -19,7 +19,7 @@ La revisión se ejecutó en la rama local `codex/integration-final`, creada desd
 
 Los runners ahora crean bases temporales con prefijo `vitalsync_test_audit_` y no truncan bases preexistentes. Las cuatro bases creadas durante esta auditoría se mantienen en PostgreSQL; no se borraron. Al iniciar el backend, la migración ya estaba aplicada y el seed dejó intacta la contraseña del paciente existente. El seed ahora crea una clave aleatoria solo para un usuario paciente nuevo, y las guías actuales no publican contraseñas compartidas.
 
-**Pendiente de seguridad antes de compartir de nuevo:** commits antiguos del historial Git contienen credenciales de demostración. La documentación y el seed actuales ya no las publican, pero este trabajo no reescribió historia ni rotó las cuentas existentes. Rota las contraseñas de las cuentas ficticias antes de entregar o volver a publicar el repositorio. No se hizo push.
+**Seguridad de credenciales:** al iniciar esta publicación, dos claves de cuentas ficticias encontradas en commits históricos todavía autenticaban. Se rotaron las cuentas existentes de administrador y paciente mediante solicitudes administrativas y enlaces locales de un solo uso. Las claves anteriores ahora reciben HTTP 401 y las nuevas se validaron con roles `ADMIN` y `PATIENT`. El archivo local que contiene las nuevas claves tiene ACL protegida para el usuario de Windows y `SYSTEM`; no forma parte del repositorio. Gitleaks no encontró otros secretos con sus reglas estándar. Los valores antiguos continúan en el historial público, pero ya no permiten acceder a esas cuentas. No se reescribió historia.
 
 ## Actualización: cancelación universal de planes (9 de noviembre de 2026)
 
