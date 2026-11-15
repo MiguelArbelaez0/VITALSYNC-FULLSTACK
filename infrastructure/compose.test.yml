@@ -3,7 +3,8 @@ services:
   test-backend:
     build: ./backend
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-vitalsync}:${POSTGRES_PASSWORD:-local_demo_change_me}@db:5432/vitalsync_test
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-vitalsync}:${POSTGRES_PASSWORD:-local_demo_change_me}@db:5432/${VITALSYNC_TEST_DATABASE_NAME:-vitalsync_test}
+      VITALSYNC_TEST_DATABASE_NAME: ${VITALSYNC_TEST_DATABASE_NAME:-vitalsync_test}
       DEMO_MODE: "true"
       COOKIE_SECURE: "false"
       ALLOWED_ORIGINS: http://localhost:5289

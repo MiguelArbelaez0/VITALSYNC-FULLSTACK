@@ -1,11 +1,17 @@
 ﻿# Disposable test services share the vitalsync project; NEVER reset the application database.
 $ErrorActionPreference='Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
+$previousTestName=$env:VITALSYNC_TEST_DATABASE_NAME
+$env:VITALSYNC_TEST_DATABASE_NAME='vitalsync_test_audit_'+(Get-Date -Format 'yyyyMMddHHmmss')
 $composeArgs=@('-p','vitalsync','-f','docker-compose.yml','-f','infrastructure/compose.test.yml')
 $configText=docker compose @composeArgs config --format json
 if($LASTEXITCODE -ne 0){throw 'Configuración de pruebas inválida'}
 $config=($configText -join "`n") | ConvertFrom-Json
-if($config.name -ne 'vitalsync' -or $config.services.'test-backend'.environment.DATABASE_URL -notmatch '/vitalsync_test$' -or $config.volumes.vitalsync_data.name -ne 'vitalsync_vitalsync_data'){throw 'Aislamiento incorrecto'}
+if($config.name -ne 'vitalsync' -or $config.services.'test-backend'.environment.DATABASE_URL -notmatch '/vitalsync_test_audit_[0-9]{14}$' -or $config.volumes.vitalsync_data.name -ne 'vitalsync_vitalsync_data'){throw 'Aislamiento incorrecto'}
+$dbUser=$config.services.db.environment.POSTGRES_USER
+$dbName=$config.services.db.environment.POSTGRES_DB
+docker compose -p vitalsync exec -T db psql -U $dbUser -d $dbName -c "CREATE DATABASE $env:VITALSYNC_TEST_DATABASE_NAME"
+if($LASTEXITCODE -ne 0){throw 'No se creó la base E2E temporal; no se modificaron bases existentes'}
 $folder=Join-Path ([Environment]::GetFolderPath('Desktop')) ('VITALSYNC-CREDENCIALES/e2e-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $folder | Out-Null
 $acl=New-Object Security.AccessControl.DirectorySecurity
@@ -38,5 +44,6 @@ try{
  docker compose @composeArgs rm -s -f test-backend test-frontend
  if($LASTEXITCODE -ne 0){throw 'Revisa los servicios temporales; no borres volúmenes'}
  Remove-Item Env:E2E_CREDENTIALS_FILE -ErrorAction SilentlyContinue
+ if($null -eq $previousTestName){Remove-Item Env:VITALSYNC_TEST_DATABASE_NAME -ErrorAction SilentlyContinue}else{$env:VITALSYNC_TEST_DATABASE_NAME=$previousTestName}
 }
 exit $testExit

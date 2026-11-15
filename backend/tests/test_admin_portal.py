@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select, func
 from fastapi.testclient import TestClient
 
-from conftest import ADMIN_TEST_PASSWORD, appointment, activate
+from conftest import ADMIN_TEST_PASSWORD, PATIENT_TEST_PASSWORD, appointment, activate
 from app.db.session import SessionLocal
 from app.main import app
 from app.models.entities import User, DoctorAccount, DoctorCredentialState, RecoveryRequest, Plan, PatientPlan, SubscriptionTerms, Payment, PaymentTerms, RefundRequest, RefundTransition, Appointment, Doctor, Availability
@@ -44,7 +44,7 @@ def test_admin_module_scope_is_enforced_server_side(client):
     assert settings.status_code == 200 and settings.json()['institution'] is None
     assert admin.get('/api/admin/administrators').status_code == 200
     with TestClient(app) as patient:
-        assert patient.post('/api/auth/login', json={'email': 'paciente@vitalsync.demo', 'password': 'Paciente2026!'}).status_code == 200
+        assert patient.post('/api/auth/login', json={'email': 'paciente@vitalsync.demo', 'password': PATIENT_TEST_PASSWORD}).status_code == 200
         assert patient.get('/api/admin/dashboard').status_code == 403
     with SessionLocal() as db:
         from app.models.entities import AdminEvent
@@ -73,7 +73,7 @@ def test_admin_doctor_creation_creates_private_recovery_without_exposing_passwor
 
 def test_plan_catalog_edit_does_not_change_existing_subscription_terms(client):
     patient = client
-    assert patient.post('/api/auth/login', json={'email': 'paciente@vitalsync.demo', 'password': 'Paciente2026!'}).status_code == 200
+    assert patient.post('/api/auth/login', json={'email': 'paciente@vitalsync.demo', 'password': PATIENT_TEST_PASSWORD}).status_code == 200
     activate(patient, 'Estándar')
     with SessionLocal() as db:
         pp = db.scalar(select(PatientPlan))
@@ -102,7 +102,7 @@ def test_plan_catalog_edit_does_not_change_existing_subscription_terms(client):
 
 def test_admin_refund_requires_cancellation_and_follows_versioned_review(client):
     patient = client
-    assert patient.post('/api/auth/login', json={'email': 'paciente@vitalsync.demo', 'password': 'Paciente2026!'}).status_code == 200
+    assert patient.post('/api/auth/login', json={'email': 'paciente@vitalsync.demo', 'password': PATIENT_TEST_PASSWORD}).status_code == 200
     appointment(patient, 'Básico')
     with SessionLocal() as db:
         copay = db.scalar(select(Payment).where(Payment.kind == 'COPAY'))
@@ -157,7 +157,7 @@ def test_recovery_is_private_single_use_and_does_not_change_password_until_redee
 
 
 def test_admin_cannot_disable_a_doctor_with_future_bookings(client):
-    assert client.post('/api/auth/login', json={'email': 'paciente@vitalsync.demo', 'password': 'Paciente2026!'}).status_code == 200
+    assert client.post('/api/auth/login', json={'email': 'paciente@vitalsync.demo', 'password': PATIENT_TEST_PASSWORD}).status_code == 200
     appointment(client, 'Básico')
     admin = login_admin(client)
     with SessionLocal() as db:

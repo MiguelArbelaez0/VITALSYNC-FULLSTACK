@@ -1,5 +1,26 @@
 # Validación de la primera entrega
 
+## Auditoría integral final (14 de noviembre de 2026)
+
+La revisión se ejecutó en la rama local `codex/integration-final`, creada desde `46d22ea`; los commits de paciente, médico y administrador ya forman parte de esa línea. No se hizo merge adicional, push ni publicación. Se agregó un flujo local de GitHub Actions en `.github/workflows/ci.yml`; aún no se ejecuta en GitHub porque no se publicó.
+
+| Comprobación | Resultado |
+| --- | --- |
+| Backend completo en PostgreSQL | **158 aprobadas** en `vitalsync_test_audit_*` |
+| Frontend Vitest | **41 aprobadas** |
+| Playwright escritorio y móvil | **16 aprobadas**; paciente, médico, administrador, agenda compartida y teleconsulta |
+| TypeScript y build React | **Aprobados**; aviso no bloqueante por chunk principal de 588.81 kB |
+| Compose / Docker Desktop | Solo el proyecto `vitalsync`; `db`, `backend` y `frontend` saludables |
+| API y rutas SPA | `/api/health` OK; `/login`, `/portal`, `/doctor` y `/admin` responden HTTP 200 |
+| Alembic | `20261120_admin_portal` es la versión aplicada y única cabeza |
+| BD principal / volumen | `vitalsync` sobre `vitalsync_vitalsync_data`; 55 pacientes, 5 médicos, 60 citas y 3 planes |
+| BD de pruebas que ya existía | `vitalsync_test` conservó 15 pacientes, 16 citas y 9 encuentros clínicos |
+| Respaldo previo a la auditoría | PASS: `C:\Users\USUARIO\Desktop\VITALSYNC-RESPALDOS\vitalsync-20261114-231519.dump`, 170332 bytes, SHA-256 `1412751ca0e184e2e9b19c2e85ede60eb800b59d6fed9151b2be70c1b6064e42` |
+
+Los runners ahora crean bases temporales con prefijo `vitalsync_test_audit_` y no truncan bases preexistentes. Las cuatro bases creadas durante esta auditoría se mantienen en PostgreSQL; no se borraron. Al iniciar el backend, la migración ya estaba aplicada y el seed dejó intacta la contraseña del paciente existente. El seed ahora crea una clave aleatoria solo para un usuario paciente nuevo, y las guías actuales no publican contraseñas compartidas.
+
+**Pendiente de seguridad antes de compartir de nuevo:** commits antiguos del historial Git contienen credenciales de demostración. La documentación y el seed actuales ya no las publican, pero este trabajo no reescribió historia ni rotó las cuentas existentes. Rota las contraseñas de las cuentas ficticias antes de entregar o volver a publicar el repositorio. No se hizo push.
+
 ## Actualización: cancelación universal de planes (9 de noviembre de 2026)
 
 La migración `20261112_plan_cancellation` quedó aplicada en PostgreSQL. La nueva ruta `POST /api/my-plan/cancel` se verificó con los cuatro planes de prueba (Básico, Estándar, Premium y un plan añadido durante la prueba). La suite backend completa aprobó **53 pruebas**; el frontend aprobó **17 pruebas unitarias** y **2 recorridos E2E** en escritorio y emulación iPhone 13. Ambos recorridos E2E cancelaron Estándar con la interfaz real y confirmaron desistimiento, resultado persistido, tarjeta actualizada y ausencia de desplazamiento horizontal. `npm run build` y `git diff --check` finalizaron sin errores.

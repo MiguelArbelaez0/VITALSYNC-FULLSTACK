@@ -19,7 +19,10 @@ def seed():
             db.add(admin)
             db.flush()
         if not db.scalar(select(User).where(User.email == 'paciente@vitalsync.demo')):
-            u = User(email='paciente@vitalsync.demo', name='Valentina Torres', password_hash=passwords.hash('Paciente2026!'), role='PATIENT')
+            # Never publish or reuse a shared demo password. Existing accounts are
+            # intentionally left untouched; a new local demo account gets a random
+            # secret and can use the normal recovery flow if interactive access is needed.
+            u = User(email='paciente@vitalsync.demo', name='Valentina Torres', password_hash=passwords.hash(secrets.token_urlsafe(48)), role='PATIENT')
             db.add(u)
             db.flush()
             db.add(Patient(id=u.id, phone='300 123 4567'))

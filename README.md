@@ -9,12 +9,12 @@ Requisitos: Docker Desktop iniciado con contenedores Linux y Docker Compose v2, 
 Desde esta carpeta:
 
 ```powershell
-Copy-Item .env.example .env
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 docker compose up -d --build
 docker compose ps
 ```
 
-También puedes ejecutar el iniciador, que comprueba puertos y crea `.env` si falta:
+También puedes ejecutar el iniciador. Comprueba la configuración y el volumen persistente; requiere que `.env` ya exista:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File infrastructure/Start-Vitalsync.ps1
@@ -34,7 +34,7 @@ powershell -ExecutionPolicy Bypass -File infrastructure/Start-Vitalsync.ps1
 
 Todos los puertos publicados se vinculan exclusivamente a `127.0.0.1`. Se comprobaron libres antes de iniciar. El proyecto Compose se llama `vitalsync` y el volumen persistente `vitalsync_vitalsync_data`. No se usan servicios, datos, credenciales ni puertos de otros proyectos.
 
-**Cuenta ficticia de paciente:** `paciente@vitalsync.demo` / `Paciente2026!`. Comienza sin plan. El seed nunca restablece un plan, contraseña o perfil que hayas modificado. También puedes crear cuentas nuevas en **Crear mi cuenta** para repetir la demostración desde cero.
+**Paciente ficticio de demostración:** `paciente@vitalsync.demo`. Su contraseña no se publica ni se comparte como valor predeterminado; en un entorno nuevo el seed genera una clave aleatoria. Para probar el portal, crea una cuenta desde **Crear mi cuenta**. En instalaciones existentes, el seed conserva las credenciales y el perfil que ya tengas.
 
 **Cuenta de administrador:** `admin@vitalsync.demo`. En instalaciones existentes, el seed conserva la contraseña que ya estaba configurada. Si no la tienes, solicita un enlace de un solo uso usando el procedimiento privado descrito en [docs/admin-portal.md](docs/admin-portal.md); no se restablecen contraseñas automáticamente. Tras iniciar sesión, el rol abre `/admin`.
 
@@ -150,13 +150,13 @@ docker compose exec backend python -m app.seed
 
 ## Pruebas
 
-Backend real sobre la base **aislada** `vitalsync_test`, dentro de PostgreSQL. La suite rechaza cualquier otro nombre de BD antes de truncar sus datos:
+Backend real en una base temporal con prefijo `vitalsync_test_audit_`, dentro de PostgreSQL. El runner crea una base nueva por ejecución y la suite solo admite nombres de prueba autorizados antes de truncar sus propias tablas:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File infrastructure/Test-Backend.ps1
 ```
 
-El script toma las credenciales de la configuración efectiva y usa el servicio `db`. Separa la base de pruebas `vitalsync_test` de la base principal `vitalsync`; la fixture impide ejecutar el truncado de pruebas contra la principal.
+El script toma la configuración efectiva y usa el servicio `db`. No modifica ni trunca la base acumulada `vitalsync_test`, la base principal `vitalsync` ni otros datos preexistentes. Conserva la base de auditoría recién creada para que sus resultados puedan inspeccionarse.
 
 Frontend:
 
@@ -168,7 +168,7 @@ npm run build
 cd ..
 ```
 
-El E2E que crea cuentas y reservas usa exclusivamente la base desechable `vitalsync_test`, con dos servicios temporales dentro del mismo proyecto `vitalsync`. El script selecciona `infrastructure/compose.test.yml` y retira solo esos servicios, conservando el servidor PostgreSQL y todos los volúmenes. No ejecutarlo al mismo tiempo que pytest; nunca almacenar datos útiles en `vitalsync_test`:
+El E2E que crea cuentas y reservas usa una base temporal nueva `vitalsync_test_audit_*`, con dos servicios dentro del proyecto `vitalsync`. El script selecciona `infrastructure/compose.test.yml` y retira solo esos servicios; conserva el servidor PostgreSQL, sus volúmenes y todas las bases preexistentes:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File infrastructure/test-doctor-portal.ps1

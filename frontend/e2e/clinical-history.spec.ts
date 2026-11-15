@@ -53,8 +53,9 @@ test("historia ficticia protegida, primer acceso individual y teleconsulta entre
     viewport: info.project.use.viewport,
   });
   const patient = await pc.newPage();
+  const patientCredential = JSON.parse(readFileSync(credentialFile, "utf8")).patient;
   const login = await patient.request.post("/api/auth/login", {
-    data: { email: "paciente@vitalsync.demo", password: "Paciente2026!" },
+    data: patientCredential,
   });
   expect(login.ok()).toBeTruthy();
   const patientId = (await login.json()).id;

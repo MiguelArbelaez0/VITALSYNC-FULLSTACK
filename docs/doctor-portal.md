@@ -91,7 +91,7 @@ La cancelación médica conserva cita, pagos e historial, exige motivo, confirma
 
 ## Pruebas reproducibles
 
-Backend, exclusivamente `vitalsync_test`:
+Backend, en una base de auditoría temporal que crea el runner:
 
 ```powershell
 docker compose -p vitalsync run --rm --no-deps -v "${PWD}\backend:/app" backend python -m pytest -q
@@ -110,7 +110,7 @@ E2E completo en proceso independiente:
 powershell -NoProfile -ExecutionPolicy Bypass -File infrastructure/test-doctor-portal.ps1
 ```
 
-El runner agrega temporalmente `test-backend` y `test-frontend` dentro de **vitalsync**, con puertos 8189/5289 y la base desechable `vitalsync_test` del servidor existente. El fixture verifica el nombre de la base antes de truncar sus tablas, genera cuentas ficticias y exporta claves a un archivo local protegido fuera de Git. No almacenar datos útiles en esa base ni ejecutar pytest al mismo tiempo. La aplicación `vitalsync` conserva sus datos. Al terminar se retiran únicamente los dos servicios temporales, sin borrar redes compartidas ni volúmenes. Las pruebas de escritorio incluyen reinicio de PostgreSQL/backend, con recuperación de sesiones y estados.
+El runner agrega temporalmente `test-backend` y `test-frontend` dentro de **vitalsync**, con puertos 8189/5289 y crea una base temporal nueva `vitalsync_test_audit_*`. El fixture valida el nombre antes de truncar sus tablas y genera cuentas ficticias con claves aleatorias exportadas a un archivo local protegido fuera de Git. La base de prueba preexistente `vitalsync_test` y la aplicación conservan sus datos. No ejecutar pytest al mismo tiempo. Al terminar se retiran únicamente los dos servicios temporales, sin borrar redes compartidas ni volúmenes; la base de auditoría se conserva para inspección.
 
 Las pruebas cubren los cinco médicos, contraseñas existentes, futuras altas, concurrencia, idempotencia, perfiles deshabilitados, cambio inicial, revocación de sesiones y reversión por auditoría fallida. Cubren estados asistenciales válidos e inválidos, aislamiento entre pacientes/médicos, administrador/paciente/anónimo, IDOR, seed académico limitado y lectura únicamente autorizada. E2E comprueba el recorrido paciente-reserva-médico-historia-teleconsulta-historial, cancelación y notificación, escritorio y móvil.
 

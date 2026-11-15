@@ -15,7 +15,7 @@ Backend y PostgreSQL deben figurar `healthy`. Frontend debe estar `Up`. Abre [el
 
 ## 2. Iniciar sesión o registrar un paciente nuevo
 
-En `/`, pulsa **Iniciar sesión**. Correo: `paciente@vitalsync.demo`. Contraseña: `Paciente2026!`. Pulsa **Iniciar sesión**. Para crear una identidad independiente, selecciona **Crea tu cuenta** y escribe nombres, apellidos, un número de cédula ficticio de 6 a 10 dígitos, correo, teléfono y una contraseña de 10 o más caracteres con mayúscula, minúscula y número. Confirma la contraseña y acepta el aviso de privacidad; la casilla empieza desmarcada. El alta inicia sesión automáticamente y muestra la confirmación en el dashboard.
+En `/`, selecciona **Crea tu cuenta** y escribe nombres, apellidos, un número de cédula ficticio de 6 a 10 dígitos, correo, teléfono y una contraseña de 10 o más caracteres con mayúscula, minúscula y número. Confirma la contraseña y acepta el aviso de privacidad; la casilla empieza desmarcada. El alta inicia sesión automáticamente y muestra la confirmación en el dashboard. La cuenta de paciente que crea el seed no tiene una contraseña común publicada.
 
 La cédula se guarda como texto para preservar ceros iniciales, se valida como formato y se muestra enmascarada. La aplicación no consulta registros oficiales ni comprueba que el número pertenezca a la persona. Usa solo datos ficticios.
 

@@ -5,11 +5,12 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import create_engine, text
 from app.db.session import engine
+from conftest import TEST_DATABASE_NAME
 
 
 def test_upgrade_repairs_legacy_finalized_room_without_changing_scheduled_date():
     schema = 'lifecycle_migration_' + uuid4().hex
-    assert engine.url.database == 'vitalsync_test'
+    assert engine.url.database == TEST_DATABASE_NAME
     with engine.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA "{schema}"'))
         # Shadow the public version table before Alembic inspects search_path.
@@ -54,7 +55,7 @@ def test_upgrade_repairs_legacy_finalized_room_without_changing_scheduled_date()
 ])
 def test_each_divergent_branch_upgrades_to_the_single_merge_head(branch_head):
     schema = 'lifecycle_branch_' + uuid4().hex
-    assert engine.url.database == 'vitalsync_test'
+    assert engine.url.database == TEST_DATABASE_NAME
     with engine.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA "{schema}"'))
         connection.execute(text(f'CREATE TABLE "{schema}".alembic_version (version_num varchar(32) PRIMARY KEY)'))

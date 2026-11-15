@@ -14,7 +14,7 @@ Las migraciones `20261115_demo_completion` y `20261116_demo_metadata` agregan me
 
 ## Verificación reproducible
 
-Backend: ejecutar `pytest -q` dentro del contenedor backend con `TEST_DATABASE_URL` apuntando a **vitalsync_test**. La suite exige ese nombre y limpia únicamente esa base aislada. Nunca apuntar las pruebas a la base de demostración.
+Backend: ejecutar `powershell -ExecutionPolicy Bypass -File infrastructure/Test-Backend.ps1`. El runner crea una base única `vitalsync_test_audit_*`; las fixtures exigen el prefijo seguro y limpian solo las tablas de esa base temporal. Nunca apuntar las pruebas a la base de demostración ni a una base preexistente.
 
 Frontend, desde `frontend`: `npm test` y `npm run build`.
 

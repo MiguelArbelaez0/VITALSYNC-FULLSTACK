@@ -188,7 +188,7 @@ describe("Autenticación y acceso", () => {
       screen.getByLabelText("Correo electrónico"),
       "paciente@vitalsync.demo",
     );
-    await userEvent.type(screen.getByLabelText("Contraseña"), "Paciente2026!");
+    await userEvent.type(screen.getByLabelText("Contraseña"), "SamplePassA1!");
     await userEvent.click(
       screen.getByRole("button", { name: "Iniciar sesión" }),
     );

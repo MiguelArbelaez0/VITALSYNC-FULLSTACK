@@ -78,7 +78,7 @@ powershell -ExecutionPolicy Bypass -File infrastructure/Backup-Vitalsync.ps1
 
 ## Validación y capturas
 
-La suite backend usa solo `vitalsync_test` y protege el nombre de la base antes del `TRUNCATE`. Frontend: `cd frontend; npm test; npm run build`. Playwright corre sobre la misma base aislada mediante `infrastructure/test-doctor-portal.ps1`; no se ejecuta junto con pytest.
+La suite backend y Playwright crean bases temporales únicas `vitalsync_test_audit_*`; sus guardas validan el nombre antes del `TRUNCATE`. No modifican la base de prueba preexistente ni la aplicación. Frontend: `cd frontend; npm test; npm run build`. Ejecuta pytest y Playwright en serie para evitar contención de recursos.
 
 Capturas E2E con datos de la base aislada:
 

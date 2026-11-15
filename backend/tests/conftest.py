@@ -6,7 +6,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text, select
 
 # Solo se permite una BD de pruebas separada; nunca truncar la de demostración.
-os.environ['DATABASE_URL'] = os.getenv('TEST_DATABASE_URL', 'postgresql+psycopg://vitalsync:local_demo_change_me@db:5432/vitalsync_test')
+TEST_DATABASE_NAME = os.getenv('VITALSYNC_TEST_DATABASE_NAME', 'vitalsync_test_audit_unconfigured')
+os.environ['DATABASE_URL'] = os.getenv('TEST_DATABASE_URL', os.getenv('DATABASE_URL', f'postgresql+psycopg://vitalsync:local_demo_change_me@db:5432/{TEST_DATABASE_NAME}'))
 os.environ['DEMO_MODE'] = 'true'
 from app.main import app
 from app.db.session import SessionLocal, engine
@@ -14,10 +15,11 @@ from app.models.entities import *
 from app.seed import seed
 from app.core.security import passwords
 ADMIN_TEST_PASSWORD=uuid4().hex+'Aa1!'
+PATIENT_TEST_PASSWORD=uuid4().hex+'Aa1!'
 
 @pytest.fixture(scope='session', autouse=True)
 def migrated_database():
-    assert engine.url.database == 'vitalsync_test', 'Las pruebas requieren la base aislada vitalsync_test'
+    assert engine.url.database == TEST_DATABASE_NAME and TEST_DATABASE_NAME.startswith('vitalsync_test_audit_'), 'Las pruebas requieren una base aislada de pruebas'
     subprocess.run(['alembic', 'upgrade', 'head'], check=True)
 
 @pytest.fixture(autouse=True)
@@ -28,6 +30,7 @@ def clean_database(migrated_database):
     seed()
     with SessionLocal.begin() as db:
         db.scalar(select(User).where(User.role=='ADMIN')).password_hash=passwords.hash(ADMIN_TEST_PASSWORD)
+        db.scalar(select(User).where(User.email=='paciente@vitalsync.demo')).password_hash=passwords.hash(PATIENT_TEST_PASSWORD)
 
 @pytest.fixture
 def client():
@@ -36,7 +39,7 @@ def client():
 
 @pytest.fixture
 def patient(client):
-    r = client.post('/api/auth/login', json={'email':'paciente@vitalsync.demo','password':'Paciente2026!'})
+    r = client.post('/api/auth/login', json={'email':'paciente@vitalsync.demo','password':PATIENT_TEST_PASSWORD})
     assert r.status_code == 200, r.text
     return client
 
