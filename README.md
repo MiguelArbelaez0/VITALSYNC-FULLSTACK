@@ -1,6 +1,6 @@
 # VITALSYNC
 
-**Portal del paciente con React, FastAPI y PostgreSQL, ejecutado completamente en local.** Primera entrega académica preparada para la demostración del 9 de noviembre de 2026. Los médicos, horarios, planes y pagos son ficticios; las operaciones y la persistencia son reales.
+**Portales de pacientes, médicos y administración en una aplicación local con React, FastAPI y PostgreSQL.** Los perfiles, horarios, planes y pagos son de demostración; las operaciones y la persistencia son reales.
 
 ## Inicio rápido en Windows 11
 
@@ -23,6 +23,10 @@ powershell -ExecutionPolicy Bypass -File infrastructure/Start-Vitalsync.ps1
 | Servicio | Dirección local predeterminada |
 | --- | --- |
 | Portal React | http://localhost:5188 |
+| Login compartido | http://localhost:5188/login |
+| Portal paciente | http://localhost:5188/portal |
+| Portal médico | http://localhost:5188/doctor |
+| Portal administrador | http://localhost:5188/admin |
 | FastAPI / Swagger | http://localhost:8088/docs |
 | OpenAPI JSON | http://localhost:8088/openapi.json |
 | Comprobación de BD | http://localhost:8088/api/health |
@@ -32,7 +36,7 @@ Todos los puertos publicados se vinculan exclusivamente a `127.0.0.1`. Se compro
 
 **Cuenta ficticia de paciente:** `paciente@vitalsync.demo` / `Paciente2026!`. Comienza sin plan. El seed nunca restablece un plan, contraseña o perfil que hayas modificado. También puedes crear cuentas nuevas en **Crear mi cuenta** para repetir la demostración desde cero.
 
-El seed crea un administrador ficticio (`admin@vitalsync.demo` / `AdminDemo2026!`) para registrar autoría. El login del portal **rechaza** este rol. No hay dashboard administrativo ni portal médico en esta entrega.
+**Cuenta de administrador:** `admin@vitalsync.demo`. En instalaciones existentes, el seed conserva la contraseña que ya estaba configurada. Si no la tienes, solicita un enlace de un solo uso usando el procedimiento privado descrito en [docs/admin-portal.md](docs/admin-portal.md); no se restablecen contraseñas automáticamente. Tras iniciar sesión, el rol abre `/admin`.
 
 ## Qué puedes hacer
 
@@ -49,6 +53,8 @@ El seed crea un administrador ficticio (`admin@vitalsync.demo` / `AdminDemo2026!
 - Consultar Mis citas, detalle, historial y canceladas; cancelar con motivo, confirmación expresa y control de versión.
 - Gestionar el ciclo de vida de una teleconsulta simulada: abrir sala, registrar presencias independientes, iniciar/finalizar, reportar ausencias y recuperar incidencias técnicas; no se conecta audio ni video.
 - Leer notificaciones guardadas en PostgreSQL.
+- Administrar desde `/admin` médicos, pacientes (datos administrativos), citas, disponibilidad, catálogo de planes, pagos simulados, devoluciones simuladas, auditoría, permisos y datos de contacto institucionales.
+- Limitar administradores por módulo en el servidor. El rol administrador no puede leer historias clínicas; esa información requiere al médico tratante autorizado.
 
 Las retenciones no son citas. Los pagos pendientes no activan planes ni confirman citas. La cancelación de un plan es inmediata porque estos planes no tienen renovación automática: termina la cobertura para nuevas reservas, conserva citas, pagos e historial, y registra titular, plan, transición, fecha y auditoría. Los pagos pendientes o retenciones activas deben resolverse antes. No se genera una devolución automática.
 
@@ -62,6 +68,7 @@ Backend: Python 3.13 en Docker, FastAPI, Pydantic 2, SQLAlchemy 2, Alembic, psyc
 frontend/src/
   app/                    rutas, landing y estructura responsive
   features/               auth, dashboard, doctors, plans, appointments, notifications
+  features/admin/         panel responsive por módulos administrativos
   components/ui/          componentes shadcn/ui
   hooks/                  estado de sesión
   services/               cliente REST y formatos de Bogotá/COP
@@ -72,7 +79,7 @@ backend/
   app/core/               configuración y seguridad
   app/models/             entidades SQLAlchemy
   app/schemas/            solicitudes Pydantic
-  app/services/           reglas de reserva, cancelación y pagos
+  app/services/           reglas de reserva, cancelación, pagos y administración
   app/repositories/       consultas y proyecciones
   app/db/                 unidad de trabajo transaccional
   alembic/versions/        migraciones versionadas
@@ -132,6 +139,7 @@ El backend ejecuta `alembic upgrade head` al arrancar y luego `python -m app.see
 4. `20261110_virtual_history`: amplía el historial para guardar transiciones de la sala virtual simulada.
 5. `20261114_patient_identity`: añade estado y fecha de creación de cuentas, aceptación versionada del aviso y documento nullable con formato y unicidad para CC. Las cuentas anteriores conservan sus valores nulos.
 6. `20261115_teleconsult_lifecycle`: agrega presencias y marcas de tiempo; reconcilia la cita con su teleconsulta ligada por `appointment_id`; conserva el historial y amplía estados cancelables/bloqueos de agenda.
+7. `20261120_admin_portal`: crea sidecars de permisos, auditoría, recuperación de acceso, devoluciones, revisiones de catálogo y capturas económicas. Las condiciones heredadas se etiquetan como observadas durante la migración; no modifica citas, pagos ni planes existentes.
 
 Se crean 5 especialidades, 5 médicos, 3 planes, un paciente sin plan y el administrador. Se publican los siguientes 21 días, con 6 turnos diarios por médico, y se registra un bloqueo de demostración a las 11:00 del día siguiente. Todos los turnos duran 30 minutos y tienen autoría administrativa. Las fechas se calculan en `America/Bogota`, se persisten y no se generan aleatoriamente en las consultas. Reiniciar no duplica turnos ni sobrescribe datos existentes.
 
@@ -168,13 +176,13 @@ powershell -ExecutionPolicy Bypass -File infrastructure/test-doctor-portal.ps1
 
 El script comprueba la contraseña de la cuenta médica de pruebas y no la sobrescribe. Si el volumen de pruebas es nuevo, la contraseña de demostración aislada debe configurarse explícitamente antes del primer E2E. Más información en [doctor-portal.md](docs/doctor-portal.md).
 
-Para verificar ambos portales y la persistencia de la base principal sin crear cuentas, citas o pagos, usa cuentas existentes. El programa solicita sus contraseñas de forma oculta; también admite `VITALSYNC_PATIENT_EMAIL`, `VITALSYNC_PATIENT_PASSWORD`, `VITALSYNC_DOCTOR_EMAIL` y `VITALSYNC_DOCTOR_PASSWORD` como variables del proceso:
+Para verificar paciente y médico y la persistencia de la base principal sin crear cuentas, citas o pagos, usa cuentas existentes. El programa solicita sus contraseñas de forma oculta; también admite `VITALSYNC_PATIENT_EMAIL`, `VITALSYNC_PATIENT_PASSWORD`, `VITALSYNC_DOCTOR_EMAIL` y `VITALSYNC_DOCTOR_PASSWORD` como variables del proceso:
 
 ```powershell
 python infrastructure/verify_persistence.py --restart --output docs/docker-unification-validation.json
 ```
 
-Esta comprobación compara los datos persistidos y las sesiones antes y después del reinicio; no cambia contraseñas ni cancela reservas. No la ejecutes simultáneamente con otros usuarios o pruebas que estén modificando reservas.
+Esta comprobación solicita de forma oculta las contraseñas existentes de paciente, médico y administrador; también admite las variables `VITALSYNC_PATIENT_PASSWORD`, `VITALSYNC_DOCTOR_PASSWORD` y `VITALSYNC_ADMIN_PASSWORD` en el proceso. Verifica los tres roles, deniega acceso cruzado y comprueba que sus sesiones y los datos persisten tras reiniciar; no cambia contraseñas ni cancela reservas. No la ejecutes simultáneamente con otros usuarios o pruebas que estén modificando reservas.
 
 Resultados y alcance comprobados: [VALIDACION.md](docs/VALIDACION.md).
 
@@ -209,36 +217,33 @@ docker compose -p vitalsync up -d --wait
 
 Para el arranque habitual usa `infrastructure/Start-Vitalsync.ps1`: fija el proyecto `vitalsync`, comprueba el volumen principal y espera a que los servicios estén saludables. El volumen externo existente es `vitalsync_vitalsync_data`; Compose se detiene si falta para evitar reemplazar los datos por una base vacía. No elimines volúmenes para actualizar imágenes. Consulta el [informe de unificación y mantenimiento](docs/DOCKER_UNIFICADO.md) para respaldo y recuperación.
 
-No hay recuperación de contraseña por correo. El operador local puede restablecer una contraseña ficticia mediante una consola interactiva, que revoca las sesiones previas y guarda auditoría:
-
-```powershell
-docker compose exec backend python -m app.reset_demo_password paciente@vitalsync.demo
-```
+No hay recuperación por correo. El administrador solicita una recuperación en Configuración; un operador local emite un enlace de un solo uso en un archivo protegido de Windows. La persona titular elige su contraseña en `/recover`; la contraseña existente se conserva hasta que la persona redima el enlace. Consulta [Portal administrativo](docs/admin-portal.md).
 
 ## Documentación y capturas
 
 - [Guía exacta para presentar el portal](docs/GUIA_DEMOSTRACION_PACIENTE.md)
 - [Arquitectura, estados y API](docs/ARQUITECTURA.md)
+- [Portal administrativo: módulos, permisos, privacidad y recuperación](docs/admin-portal.md)
+- [Captura del dashboard administrativo](docs/screenshots/admin-dashboard-desktop.png)
 - [Validación ejecutada y límites](docs/VALIDACION.md)
 
 ![Dashboard real](docs/screenshots/dashboard-desktop.png)
 
-## Límites y próximos módulos
+## Límites de la demostración
 
-No se implementaron dashboards de administrador, historia clínica, videollamadas, atención médica virtual real, reprogramación avanzada, devoluciones, correos, push, pagos reales, app nativa ni despliegue público. La sala virtual solo demuestra estados guardados en la base de datos; no usa audio ni video, no pide permisos del dispositivo ni genera enlaces. La atención médica y las devoluciones requieren módulos futuros.
+La administración y las devoluciones operan con registros simulados: no realizan transferencias ni procesan pagos reales. La sala virtual solo demuestra estados guardados en la base de datos; no usa audio ni video, no pide permisos del dispositivo ni genera enlaces. No se incluye correo, notificación push, app nativa ni despliegue público.
 
 El comprobante se imprime con el navegador (puedes elegir Guardar como PDF); no hay un generador de PDF en el servidor. Las notificaciones y pagos listan las últimas 100 operaciones. Las retenciones vencidas dejan de bloquear por su fecha, sin requerir un proceso programado. El seed amplía la agenda al reiniciar; no sustituye un módulo administrativo.
 
-Próximo módulo recomendado: administración de médicos, jornadas y bloqueos, reutilizando el mismo bloqueo transaccional del médico y la auditoría de esta entrega. No se realizó push ni publicación en GitHub.
+No se realizó push ni publicación en GitHub.
 
 
 ## Portal del médico
 
-La implementación médica de `codex/doctor-portal` comparte la aplicación y las sesiones existentes. Para iniciar la versión revisada y elegir la contraseña local de demostración:
+La implementación médica comparte la aplicación y las sesiones existentes. Para iniciar la versión revisada:
 
 ```powershell
-docker compose up -d --build
-docker compose exec backend python -m app.doctor_demo --set-password
+docker compose -p vitalsync up -d --build --wait
 ```
 
 Con `DEMO_MODE=true`, el seed vincula `medico@vitalsync.demo` al Dr. Alejandro Méndez sin duplicar profesionales ni sobrescribir contraseñas. Inicia sesión en `/login`; el médico accede a `/doctor` y el paciente a `/portal`.
@@ -248,7 +253,7 @@ Consulta [arquitectura, rutas, migración, pruebas y acceso local del portal mé
 
 ## Docker unificado
 
-El único despliegue permanente es `vitalsync`, con `frontend`, `backend` y `db`. Los dos portales comparten la API, el login y la base principal existente. El volumen principal es externo y queda fijado por nombre; no se genera una base vacía si desaparece.
+El único despliegue permanente es `vitalsync`, con `frontend`, `backend` y `db`. Los tres portales comparten la API, el login y la base principal existente. El volumen principal es externo y queda fijado por nombre; no se genera una base vacía si desaparece.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File infrastructure/Start-Vitalsync.ps1

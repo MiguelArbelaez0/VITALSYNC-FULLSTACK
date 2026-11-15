@@ -34,6 +34,10 @@ El segundo proyecto observado se llamaba realmente `vitalsync-doctor-check`; era
 
 Los contenedores y la red del proyecto antiguo se retiraron sin opción de eliminación de volúmenes. El runner E2E ahora selecciona un override de pruebas explícito, comprueba su volumen separado y retira automáticamente sus contenedores y red en `finally`, incluso ante fallos. Así no deja un segundo despliegue permanente en Docker Desktop.
 
+## Actualización: portal administrativo
+
+En `codex/admin-portal`, el mismo proyecto ahora sirve los portales de paciente (`/portal`), médico (`/doctor`) y administrador (`/admin`) con un login compartido. Docker Compose continúa teniendo exclusivamente `db`, `backend` y `frontend`; `vitalsync_test` es solo una base aislada para validar las tres interfaces. La configuración efectiva y la persistencia del 14 de noviembre de 2026 se vuelven a comprobar después de construir la versión administrativa; consulte [admin-portal.md](admin-portal.md) y [VALIDACION.md](VALIDACION.md) para el detalle actualizado.
+
 ## Respaldo verificable
 
 Antes de detener o cambiar servicios se crearon archivos de formato personalizado de PostgreSQL fuera del repositorio:

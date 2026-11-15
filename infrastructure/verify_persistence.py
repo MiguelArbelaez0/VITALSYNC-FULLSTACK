@@ -43,14 +43,15 @@ def snapshot():
     return json.loads(data)
 
 
-def collect(patient, doctor):
+def collect(patient, doctor, admin):
     return dict(patient=patient.request('/auth/me'), patient_appointments=patient.request('/appointments'),
-                doctor=doctor.request('/auth/me'), doctor_appointments=doctor.request('/doctor/appointments?view=all'))
+                doctor=doctor.request('/auth/me'), doctor_appointments=doctor.request('/doctor/appointments?view=all'),
+                admin=admin.request('/auth/me'), admin_dashboard=admin.request('/admin/dashboard'))
 
 
 def main():
     global BASE
-    parser = argparse.ArgumentParser(description='Comprueba ambos portales sin crear ni modificar datos de negocio')
+    parser = argparse.ArgumentParser(description='Comprueba los tres portales sin crear ni modificar datos de negocio')
     parser.add_argument('--restart', action='store_true', help='Reinicia db, backend y frontend conservando el volumen')
     parser.add_argument('--output', type=Path, help='Informe JSON sin datos personales ni credenciales')
     args = parser.parse_args()
@@ -63,15 +64,17 @@ def main():
     assert BASE in {f'http://localhost:{frontend_port}', f'http://127.0.0.1:{frontend_port}'}, 'La URL debe corresponder al frontend local del proyecto principal'
     patient_password = os.getenv('VITALSYNC_PATIENT_PASSWORD') or getpass.getpass('Contraseña del paciente existente: ')
     doctor_password = os.getenv('VITALSYNC_DOCTOR_PASSWORD') or getpass.getpass('Contraseña del medico existente: ')
-    patient, doctor = Session(), Session()
-    baseline = snapshot()
+    admin_password = os.getenv('VITALSYNC_ADMIN_PASSWORD') or getpass.getpass('Contraseña del administrador existente: ')
+    patient, doctor, admin = Session(), Session(), Session()
     try:
         patient.request('/auth/login', {'email':os.getenv('VITALSYNC_PATIENT_EMAIL','paciente@vitalsync.demo'),'password':patient_password})
         doctor.request('/auth/login', {'email':os.getenv('VITALSYNC_DOCTOR_EMAIL','medico@vitalsync.demo'),'password':doctor_password})
-        before = collect(patient, doctor)
-        assert before['patient']['role'] == 'PATIENT' and before['doctor']['role'] == 'DOCTOR'
+        admin.request('/auth/login', {'email':os.getenv('VITALSYNC_ADMIN_EMAIL','admin@vitalsync.demo'),'password':admin_password})
+        before = collect(patient, doctor, admin)
+        assert before['patient']['role'] == 'PATIENT' and before['doctor']['role'] == 'DOCTOR' and before['admin']['role'] == 'ADMIN'
         patient.request('/doctor/dashboard', expected=403)
         doctor.request('/dashboard', expected=403)
+        admin.request('/doctor/patients/4/clinical-history', expected=403)
         doctor_id = int(before['doctor']['doctor_id'])
         expected_script = f"""import json
 from sqlalchemy import select
@@ -84,17 +87,20 @@ with SessionLocal() as db:
         assert {a['id'] for a in assigned} == {a['id'] for a in before['doctor_appointments']}
         own_assigned = {a['id'] for a in assigned if a['patient_id'] == before['patient']['id']}
         assert own_assigned <= {a['id'] for a in before['patient_appointments']}
+        # Denial metadata is deliberately durable. Snapshot after these expected
+        # access checks so restart verification measures only reboot persistence.
+        baseline = snapshot()
         if args.restart:
             subprocess.run(COMPOSE + ['restart','db'],cwd=ROOT,check=True)
             subprocess.run(COMPOSE + ['up','-d','--wait','db'],cwd=ROOT,check=True)
             subprocess.run(COMPOSE + ['restart','backend','frontend'],cwd=ROOT,check=True)
             subprocess.run(COMPOSE + ['up','-d','--wait','--wait-timeout','90'],cwd=ROOT,check=True)
-        after = collect(patient, doctor)
+        after = collect(patient, doctor, admin)
         assert before == after, 'Cambios en las citas o sesiones tras reiniciar'
         assert snapshot() == baseline, 'Cambios en el contenido persistido (se excluyen solamente las sesiones de acceso)'
-        assert patient.request('/dashboard') is not None and doctor.request('/doctor/dashboard') is not None
+        assert patient.request('/dashboard') is not None and doctor.request('/doctor/dashboard') is not None and admin.request('/admin/dashboard') is not None
         result = dict(result='PASS',project='vitalsync',services=['db','backend','frontend'],database='vitalsync',
-                      volume='vitalsync_vitalsync_data',roles=['PATIENT','DOCTOR'],assigned_appointments_verified=len(assigned),
+                      volume='vitalsync_vitalsync_data',roles=['PATIENT','DOCTOR','ADMIN'],assigned_appointments_verified=len(assigned),
                       shared_patient_doctor_appointments=len(own_assigned),tables_verified=len(baseline),
                       restart_verified=args.restart,sessions_persisted=True,domain_rows_created=0,passwords_changed=0)
         if args.output:
@@ -102,7 +108,7 @@ with SessionLocal() as db:
             args.output.write_text(json.dumps(result,indent=2),encoding='utf-8')
         print(json.dumps(result,indent=2))
     finally:
-        for session in (patient,doctor):
+        for session in (patient,doctor,admin):
             try:
                 session.request('/auth/logout', {})
             except Exception:

@@ -232,9 +232,12 @@ def audit_legacy(p=Depends(paging),user=Depends(require('audit'),scope='function
     return s.page(db,q.order_by(AuditEvent.id.desc()),lambda a:dict(id=a.id,actor_id=a.actor_id,action=a.action,entity_id=a.entity_id,created_at=a.created_at),*p)
 
 @router.get('/settings')
-def settings(user=Depends(require('settings'),scope='function'),db:Session=Depends(get_db,scope='function')):
+def settings(user=Depends(authenticated_user,scope='function'),db:Session=Depends(get_db,scope='function')):
+    granted=s.scopes(db,user)
+    if user.role!='ADMIN' or not ({'settings','accounts'} & granted):s.fail('Acceso administrativo no autorizado para esta operación',403)
     row=db.get(AppSetting,'institution')
-    return dict(institution=row.value if row else dict(display_name='VITALSYNC',support_email='soporte@vitalsync.demo',support_phone='+57 300 000 0000'),demo_mode=DEMO_MODE,scopes=sorted(s.scopes(db,user)),available_scopes=list(s.SCOPES),policies=dict(deactivation='Resolve future appointments and holds before disabling',plan_changes='Current contracts retain purchased conditions; renewals use the current catalogue',refunds='Manual review and authorization; simulated transfers only',clinical='Administrator has no clinical access'))
+    institution=(row.value if row else dict(display_name='VITALSYNC',support_email='soporte@vitalsync.demo',support_phone='+57 300 000 0000')) if 'settings' in granted else None
+    return dict(institution=institution,demo_mode=DEMO_MODE,scopes=sorted(granted),available_scopes=list(s.SCOPES),policies=dict(deactivation='Resolve future appointments and holds before disabling',plan_changes='Current contracts retain purchased conditions; renewals use the current catalogue',renewal_policy='Manual renewal only; no automatic charges. The holder initiates each purchase.',refunds='Manual review and authorization; simulated transfers only',clinical='Administrator has no clinical access'))
 
 @router.put('/settings')
 def save_settings(data:SettingsInput,user=Depends(require('settings'),scope='function'),db:Session=Depends(get_db,scope='function')):

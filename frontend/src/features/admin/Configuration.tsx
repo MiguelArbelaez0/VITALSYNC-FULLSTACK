@@ -32,7 +32,7 @@ export function Configuration({ c }: { c: Context }) {
   }));
   return (
     <>
-      <section className="panel admin-section">
+      {c.can("settings") && <section className="panel admin-section">
         <h2>Institución y políticas</h2>
         <Tree data={c.data.institution} />
         <p className="admin-policy">
@@ -73,7 +73,7 @@ export function Configuration({ c }: { c: Context }) {
         >
           Editar información institucional
         </Button>
-      </section>
+      </section>}
       <section className="panel admin-section">
         <h2>Mis permisos</h2>
         <div className="admin-actions">

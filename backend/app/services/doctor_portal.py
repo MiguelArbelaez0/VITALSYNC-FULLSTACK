@@ -75,7 +75,8 @@ def cancel(db, doctor, user, appointment_id, data, administrative=False):
     db.add(StatusHistory(appointment_id=a.id, status=a.status, author_id=user.id,
                          reason=f'Cancelación {"administrativa" if administrative else "médica"} · {previous} → {a.status} · {data.reason}'))
     db.add(AuditEvent(actor_id=user.id, action='ADMIN_APPOINTMENT_CANCELLED' if administrative else 'DOCTOR_APPOINTMENT_CANCELLED', entity_id=a.id))
-    booking.notify(db, a.patient_id, f'El médico {doctor.name} canceló tu cita {a.code}. Motivo: {data.reason}. Contacta a VITALSYNC para gestionar una nueva reserva.' +
+    actor_label = 'El equipo administrativo' if administrative else f'El médico {doctor.name}'
+    booking.notify(db, a.patient_id, f'{actor_label} canceló tu cita {a.code}. Motivo: {data.reason}. Contacta a VITALSYNC para gestionar una nueva reserva.' +
                    (' El copago queda pendiente de gestión económica; no se realizó una devolución.' if a.economic_review else ''))
     db.flush()
     return dict(id=a.id, status=a.status, version=a.version, cancelled_at=a.cancelled_at,

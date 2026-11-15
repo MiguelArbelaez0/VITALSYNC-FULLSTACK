@@ -13,8 +13,10 @@ def main():
     p=argparse.ArgumentParser()
     p.add_argument('--output',required=True,type=Path)
     p.add_argument('--actor-email',default='admin@vitalsync.demo')
-    p.add_argument('--email',help='Solicita un enlace para una cuenta existente, únicamente en modo demostración')
+    p.add_argument('--email',help='Emite solo el enlace de esta cuenta existente')
+    p.add_argument('--all-pending',action='store_true',help='Emite todos los enlaces pendientes; requiere autorización explícita')
     args=p.parse_args();created=False
+    if bool(args.email)==bool(args.all_pending):p.error('Indica --email CUENTA o confirma el lote con --all-pending')
     try:
         with SessionLocal.begin() as db:
             db.execute(text('SELECT pg_advisory_xact_lock(861998)'))
@@ -26,7 +28,9 @@ def main():
                 if not target:raise ValueError('Cuenta inexistente')
                 request_recovery(db,actor,target,'Recuperación local explícita de la cuenta de demostración')
             issued=[]
-            for r in db.scalars(select(RecoveryRequest).where(RecoveryRequest.status=='PENDING').order_by(RecoveryRequest.id).with_for_update()):
+            query=select(RecoveryRequest).where(RecoveryRequest.status=='PENDING')
+            if args.email:query=query.where(RecoveryRequest.user_id==target.id)
+            for r in db.scalars(query.order_by(RecoveryRequest.id).with_for_update()):
                 user=db.get(User,r.user_id)
                 if user.status!='ACTIVE':continue
                 if user.role=='ADMIN' and not scopes(db,user)<=scopes(db,actor):continue

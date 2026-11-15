@@ -8,11 +8,14 @@ def catalog(db,plan):
     r=db.get(PlanRule,plan.id)
     result={k:getattr(plan,k) for k in ['id','name','description','price','duration_days','copay','specialty_ids','modalities','enabled']}
     result.update(copays={'VIRTUAL':r.virtual_copay if r and r.virtual_copay is not None else plan.copay,'PRESENCIAL':r.onsite_copay if r and r.onsite_copay is not None else plan.copay},consultation_limit=r.consultation_limit if r else None,benefits=r.benefits if r else '',restrictions=r.restrictions if r else '',version=r.version if r else 1)
+    result['renewal_policy']='MANUAL_NO_AUTORENEW'
     return result
 
 def subscription(db,pp):
     row=db.get(SubscriptionTerms,pp.patient_id)
-    return dict(row.terms) if row and row.plan_id==pp.plan_id else catalog(db,db.get(Plan,pp.plan_id))
+    terms=dict(row.terms) if row and row.plan_id==pp.plan_id else catalog(db,db.get(Plan,pp.plan_id))
+    terms.setdefault('renewal_policy','MANUAL_NO_AUTORENEW')
+    return terms
 
 def capture_payment(db,payment,plan):
     terms=catalog(db,plan)

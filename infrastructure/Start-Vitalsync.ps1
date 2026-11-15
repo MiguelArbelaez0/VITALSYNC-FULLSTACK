@@ -26,4 +26,5 @@ $backendPort = $config.services.backend.ports[0].published
 Write-Host "Login compartido: http://localhost:$frontendPort/login"
 Write-Host "Paciente: http://localhost:$frontendPort/portal"
 Write-Host "Medico: http://localhost:$frontendPort/doctor"
+Write-Host "Administrador: http://localhost:$frontendPort/admin"
 Write-Host "OpenAPI: http://localhost:$backendPort/docs"

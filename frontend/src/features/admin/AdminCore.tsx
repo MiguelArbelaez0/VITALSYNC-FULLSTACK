@@ -122,6 +122,8 @@ const labels: Record<string, string> = {
   expires_at: "Vencimiento",
   subscriptions: "Contrataciones",
   benefits: "Beneficios",
+  renewal_policy: "Política de renovación",
+  MANUAL_NO_AUTORENEW: "Manual, sin cobro automático",
   restrictions: "Restricciones informativas",
   price: "Precio",
   duration_days: "Vigencia en días",

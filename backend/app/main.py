@@ -18,7 +18,7 @@ from app.routers.doctor import router as doctor_router
 from app.routers.admin import router as admin_router
 from app.routers.recovery import router as recovery_router
 
-app = FastAPI(title='VITALSYNC · Portal del paciente', version='1.0.0')
+app = FastAPI(title='VITALSYNC · Portales integrados', version='1.0.0')
 app.include_router(doctor_router)
 app.include_router(admin_router)
 app.include_router(recovery_router)
@@ -29,7 +29,13 @@ async def browser_security(request: Request, call_next):
     if request.method not in ['GET', 'HEAD', 'OPTIONS']:
         origin = request.headers.get('origin')
         if (origin and origin not in ALLOWED_ORIGINS) or request.headers.get('sec-fetch-site') == 'cross-site':
-            return JSONResponse(status_code=403, content={'detail': 'Origen no autorizado'})
+            response=JSONResponse(status_code=403, content={'detail': 'Origen no autorizado'})
+            from app.services.security_audit import record
+            record(request,response.status_code)
+            response.headers['X-Content-Type-Options'] = 'nosniff'
+            response.headers['Referrer-Policy'] = 'same-origin'
+            response.headers['Cache-Control'] = 'no-store'
+            return response
     try:
         response = await call_next(request)
     except Exception as error:

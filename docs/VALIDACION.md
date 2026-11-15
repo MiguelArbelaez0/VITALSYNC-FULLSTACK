@@ -84,3 +84,29 @@ El script independiente crea una cuenta nueva, aprueba un plan Premium, confirma
 Vite muestra una advertencia de tamaño del bundle principal (~526 kB sin gzip, ~164 kB comprimido); no impide compilar ni ejecutar la demo. Starlette emite una advertencia de deprecación sobre su adaptador de pruebas con httpx; las pruebas ejecutadas pasan. La cobertura aquí es funcional, no una auditoría de seguridad o una prueba de carga sostenida.
 
 No se probaron videollamadas, pagos reales, correos, push, atención médica, módulos administrativos, devoluciones ni despliegue porque no están implementados. Los errores de base de datos se prueban mediante fallo inyectado y rollback, sin dañar la base de demostración. No se utilizó SQLite ni se declaró un navegador real sin ejecutarlo.
+
+## Actualización: portal administrativo integrado (14 de noviembre de 2026)
+
+Se completó en la rama `codex/admin-portal`, usando el proyecto Compose `vitalsync` y la base principal existente. El administrador comparte login y despliegue con los portales de paciente y médico. Se añadieron los nueve módulos descritos en [admin-portal.md](admin-portal.md), controles de permisos por módulo en servidor, auditoría, recuperación privada y protección para que administración no acceda a historias clínicas.
+
+| Comprobación | Resultado |
+| --- | --- |
+| Backend completo, PostgreSQL aislado `vitalsync_test` | **158 aprobadas** |
+| Frontend Vitest / React | **41 aprobadas** |
+| Playwright con build Docker final | **16 aprobadas**: escritorio y emulación móvil Chromium |
+| `npm run build` | TypeScript y Vite aprobados; advertencia de chunk principal de 588.81 kB |
+| Acceso al administrador de la base principal | Login válido, dashboard OK, cierre de sesión OK |
+| Acceso administrativo a historia clínica | **403** |
+| Migración Alembic | `20261120_admin_portal` aplicada; una sola cabeza |
+| Persistencia principal después de reinicio | **PASS**, proyecto `vitalsync`, 3 servicios saludables, 38 tablas verificadas, sesiones de los tres roles persistidas |
+| Agenda entre médico y paciente | 3 citas asignadas verificadas; 3 compartidas en ambas vistas |
+| Filas previas a la migración | Huellas de contenido idénticas para las 24 tablas anteriores |
+| Datos de negocio creados por la validación principal | 0 usuarios, citas o pagos nuevos |
+
+La migración agregó 13 tablas laterales y no actualizó registros existentes de pacientes, médicos, citas, pagos o planes. La base pasó de 24 a 37 tablas de aplicación (38 al contar `alembic_version`; se excluyen sesiones en la comparación de persistencia). Se conservó el volumen `vitalsync_vitalsync_data`; no se ejecutaron comandos de borrado de datos o volúmenes.
+
+El respaldo anterior a la migración se verificó con `pg_restore -l` y SHA-256: `C:\Users\USUARIO\Desktop\VITALSYNC-RESPALDOS\vitalsync-before-admin-20261114-193653.dump` (132398 bytes; `94172414E8A3C15865CFF3DDC022D67BD161C7BEA130F4F6762AC09FE469E268`). Los archivos de huellas anterior/posterior están en esa misma carpeta, fuera del repositorio. El informe automatizado sin credenciales es [admin-portal-validation.json](admin-portal-validation.json).
+
+Las 18 capturas administrativas se generaron sobre cuentas ficticias de la base de pruebas y se revisaron visualmente: [dashboard](screenshots/admin-dashboard-desktop.png), [configuración](screenshots/admin-configuration-desktop.png), [pacientes móvil](screenshots/admin-patients-mobile.png), y el conjunto completo por módulo/tamaño en [admin-portal.md](admin-portal.md). No se guardaron capturas del volumen principal.
+
+El navegador E2E emula móvil con Chromium; no se probó Safari ni un iPhone físico. Permanecen las advertencias no bloqueantes de deprecación de Starlette/httpx y tamaño del bundle principal. No se realizó push.

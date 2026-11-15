@@ -17,12 +17,14 @@ def lock_doctor(db, doctor_id):
         fail('El médico no está disponible. Selecciona otro médico')
     return d
 
-def active_plan(db, patient_id, specialty_id, modality='PRESENCIAL', exclude_hold=None):
+def active_plan(db, patient_id, specialty_id, modality='PRESENCIAL', exclude_hold=None, for_ends_at=None):
     pp = db.get(PatientPlan, patient_id)
     if not pp or pp.status != 'ACTIVE':
         fail('Debes activar tu plan para solicitar una cita médica')
     if pp.expires_at <= now():
         fail('Tu plan ha vencido. Debes renovarlo para continuar')
+    if for_ends_at is not None and for_ends_at > pp.expires_at:
+        fail('La cita debe finalizar antes del vencimiento de tu cobertura')
     from app.services import plan_terms
     from types import SimpleNamespace
     terms=plan_terms.subscription(db,pp)
@@ -70,7 +72,7 @@ def create_hold(db, user, slot_id, modality='PRESENCIAL'):
         fail(f'Este horario no está publicado para citas {modality.lower()}. Selecciona otro turno')
     if not available(db, slot, user.id):
         fail('El horario está ocupado, bloqueado o retenido. Selecciona otra fecha u horario')
-    plan = active_plan(db, user.id, doctor.specialty_id, modality)
+    plan = active_plan(db, user.id, doctor.specialty_id, modality, for_ends_at=slot.ends_at)
     h = Hold(patient_id=user.id, doctor_id=doctor.id, availability_id=slot.id, plan_id=plan.id, starts_at=slot.starts_at, ends_at=slot.ends_at, expires_at=now() + timedelta(minutes=HOLD_MINUTES), copay=plan.copay, modality=modality)
     db.add(h)
     db.flush()
@@ -89,7 +91,7 @@ def valid_hold(db, user, h):
     doctor = lock_doctor(db, h.doctor_id)
     if h.modality not in doctor.modalities:
         fail('El médico ya no ofrece esta modalidad')
-    plan = active_plan(db, user.id, doctor.specialty_id, h.modality,h.id)
+    plan = active_plan(db, user.id, doctor.specialty_id, h.modality,h.id,h.ends_at)
     if plan.id != h.plan_id or plan.copay != h.copay:
         fail('Tu plan ha cambiado. Libera la retención y selecciona nuevamente el horario')
     slot = db.get(Availability, h.availability_id)

@@ -99,7 +99,9 @@ def availability(day: date | None = None, doctor=Depends(current_doctor, scope='
     selected = day or now().astimezone(service.BOGOTA).date()
     start, end = service.day_bounds(selected)
     slots = db.scalars(select(Availability).where(Availability.doctor_id == doctor.id, Availability.starts_at >= start, Availability.starts_at < end).order_by(Availability.starts_at)).all()
-    blocks = db.scalars(select(DoctorBlock).where(DoctorBlock.doctor_id == doctor.id, DoctorBlock.starts_at < end, DoctorBlock.ends_at > start).order_by(DoctorBlock.starts_at)).all()
+    from app.models.entities import BlockRelease
+    from sqlalchemy import select as sql_select
+    blocks = db.scalars(select(DoctorBlock).where(DoctorBlock.doctor_id == doctor.id, DoctorBlock.starts_at < end, DoctorBlock.ends_at > start, ~DoctorBlock.id.in_(sql_select(BlockRelease.block_id))).order_by(DoctorBlock.starts_at)).all()
     return dict(date=selected, read_only=True,
                 slots=[dict(id=s.id, starts_at=s.starts_at, ends_at=s.ends_at, modalities=s.modalities, published=s.published) for s in slots],
                 blocks=[dict(starts_at=b.starts_at, ends_at=b.ends_at, reason=b.reason) for b in blocks])

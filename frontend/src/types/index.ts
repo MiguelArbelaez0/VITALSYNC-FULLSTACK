@@ -23,6 +23,13 @@ export interface Plan {
   duration_days: number;
   specialty_ids: number[];
   modalities: Modality[];
+  enabled?: boolean;
+  catalog_enabled?: boolean;
+  copays?: Partial<Record<Modality, number>>;
+  consultation_limit?: number | null;
+  benefits?: string;
+  restrictions?: string;
+  version?: number;
 }
 export type Modality = 'PRESENCIAL' | 'VIRTUAL';
 export interface Membership {

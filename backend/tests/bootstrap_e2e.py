@@ -1,5 +1,5 @@
 """Rebuild ONLY the disposable vitalsync_test database. Credentials go to a private file."""
-import json, os
+import json, os, secrets
 from pathlib import Path
 from sqlalchemy import text, select
 from app.db.session import engine, SessionLocal, Base
@@ -18,6 +18,9 @@ def main():
     with SessionLocal.begin() as db:
         admin=db.scalar(select(User).where(User.role=='ADMIN'))
         result=provision(db,admin)
+        admin_secret=secrets.token_urlsafe(24)+'Aa1!'
+        admin.password_hash=passwords.hash(admin_secret)
+        result['admin']={'email':admin.email,'password':admin_secret}
         seed_histories(db,True)
         # This account was JUST recreated in the disposable database, never an existing user.
         doctor=db.scalar(select(User).where(User.email=='medico@vitalsync.demo'))

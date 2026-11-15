@@ -85,6 +85,7 @@ def no_affected(db,doctor_id=None,patient_id=None):
 
 def update_doctor(db,actor,id,data):
     d=get(db,Doctor,id,True);get(db,Specialty,data.specialty_id)
+    if d.enabled!=data.enabled and 'accounts' not in scopes(db,actor):fail('Se requiere permiso de cuentas para cambiar el acceso del profesional',403)
     if db.scalar(select(Doctor.id).where(func.lower(Doctor.name)==data.name.lower(),Doctor.id!=id)):fail('Nombre profesional duplicado')
     if d.enabled and not data.enabled:no_affected(db,doctor_id=id)
     # A modality/specialty change cannot strand future reservations or holds.
