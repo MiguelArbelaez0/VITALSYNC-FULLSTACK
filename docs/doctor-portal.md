@@ -17,7 +17,7 @@ El login redirige según el rol. Registro público: solamente pacientes. El admi
 
 ## Cuentas individuales y entrega privada
 
-Existen cinco perfiles profesionales. El aprovisionamiento conserva la vinculación y contraseña de cualquier cuenta existente; crea solamente las pendientes. La contraseña inicial de cada cuenta nueva es aleatoria e individual, con hash Argon2 en PostgreSQL. El primer acceso exige elegir una contraseña propia antes de acceder a agenda, pacientes o información clínica. El cambio revoca las demás sesiones y queda auditado.
+Existen cinco perfiles profesionales. El aprovisionamiento conserva la vinculación y contraseña de cualquier cuenta existente; crea solamente las pendientes. La contraseña inicial de cada cuenta nueva es aleatoria e individual, con hash Argon2 en PostgreSQL. En modo demostración el médico puede ingresar al portal sin una pantalla obligatoria de cambio de contraseña; fuera de ese modo debe elegir una propia antes de acceder a agenda, pacientes o información clínica. El cambio revoca las demás sesiones y queda auditado.
 
 | Perfil | Correo de acceso | Procedencia |
 | --- | --- | --- |

@@ -75,12 +75,24 @@ def test_provision_avoids_case_insensitive_email_collisions():
         assert existing.password_hash==before and existing.role=='PATIENT'
 
 
-def test_temporary_password_requires_rotation_and_is_not_in_api(accounts):
+def test_demo_doctor_can_enter_without_forced_rotation(accounts):
     record=accounts[0]
     with login_as(record,rotate=False) as client:
         me=client.get('/api/auth/me').json()
-        assert me['must_change_password'] is True
+        assert me['must_change_password'] is False
         assert record['temporary_password'] not in json.dumps(me)
+        assert client.get('/api/doctor/dashboard').status_code==200
+
+
+def test_non_demo_doctor_still_requires_initial_password_rotation(accounts,monkeypatch):
+    from app import main
+    from app.core import security
+    record=accounts[0]
+    monkeypatch.setattr(main,'DEMO_MODE',False)
+    monkeypatch.setattr(security,'DEMO_MODE',False)
+    with login_as(record,rotate=False) as client:
+        me=client.get('/api/auth/me').json()
+        assert me['must_change_password'] is True
         assert client.get('/api/doctor/dashboard').status_code==403
         wrong={'current_password':uuid4().hex,'new_password':uuid4().hex+'Aa1!'};wrong['confirm_password']=wrong['new_password']
         assert client.post('/api/doctor/password',json=wrong).status_code==400
