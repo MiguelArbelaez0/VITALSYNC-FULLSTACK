@@ -96,6 +96,8 @@ export interface Appointment {
   simulated_completed_at?: string | null;
   clinically_attended?: boolean;
   demo_mode?: boolean;
+  livekit_enabled?: boolean;
+  livekit_connection_state?: "WAITING" | "CONNECTED" | "RECONNECTING" | "DISCONNECTED";
   patient_present_at?: string | null;
   doctor_present_at?: string | null;
   id: number;
@@ -164,6 +166,7 @@ export interface MedicalAppointment {
   completion_source: string | null; simulated_completed_at: string | null; clinically_attended: boolean;
   cancelled_at: string | null; cancellation_reason: string | null; history?: NonNullable<Appointment['history']>;
   virtual_status?: string; virtual_state?: Appointment['virtual_state']; demo_mode?: boolean;
+  livekit_enabled?: boolean; livekit_connection_state?: Appointment['livekit_connection_state'];
 }
 export interface MedicalDashboard {
   doctor: MedicalProfile; date: string; timezone: string;

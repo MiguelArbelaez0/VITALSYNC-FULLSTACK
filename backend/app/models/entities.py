@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, ForeignKey, Text, UniqueConstraint, CheckConstraint, Index, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
+from uuid import uuid4
 from app.db.session import Base
 
 def now():
@@ -222,7 +223,30 @@ class VirtualConsultation(Base):
     incident_reason = Column(Text)
     incident_at = Column(DateTime(timezone=True))
     incident_resolved_at = Column(DateTime(timezone=True))
-    __table_args__ = (CheckConstraint("status IN ('PROGRAMADA','SALA_DISPONIBLE','PACIENTE_EN_ESPERA','MEDICO_EN_ESPERA','EN_ESPERA','EN_ATENCION','FINALIZADA','PACIENTE_AUSENTE','MEDICO_AUSENTE','ERROR_TECNICO','CANCELADA')", name='ck_virtual_consultations_status'),)
+    livekit_room_name = Column(String(80), nullable=False, default=lambda: 'vs-' + uuid4().hex)
+    livekit_patient_connected = Column(Boolean, nullable=False, default=False, server_default='false')
+    livekit_doctor_connected = Column(Boolean, nullable=False, default=False, server_default='false')
+    livekit_connection_state = Column(String(20), nullable=False, default='WAITING', server_default='WAITING')
+    livekit_last_event_at = Column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint("status IN ('PROGRAMADA','SALA_DISPONIBLE','PACIENTE_EN_ESPERA','MEDICO_EN_ESPERA','EN_ESPERA','EN_ATENCION','FINALIZADA','PACIENTE_AUSENTE','MEDICO_AUSENTE','ERROR_TECNICO','CANCELADA')", name='ck_virtual_consultations_status'),
+        UniqueConstraint('livekit_room_name', name='uq_virtual_consultations_livekit_room'),
+        CheckConstraint("livekit_connection_state IN ('WAITING','CONNECTED','RECONNECTING','DISCONNECTED')", name='ck_virtual_consultations_livekit_connection_state'),
+    )
+
+class LiveKitRoomEvent(Base):
+    __tablename__ = 'livekit_room_events'
+    id = Column(Integer, primary_key=True)
+    event_id = Column(String(80), nullable=False, unique=True)
+    appointment_id = Column(Integer, ForeignKey('appointments.id'), nullable=False, index=True)
+    participant_user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    participant_role = Column(String(8), nullable=False)
+    event_type = Column(String(32), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=now, server_default=func.now())
+    __table_args__ = (
+        CheckConstraint("participant_role IN ('PATIENT','DOCTOR')", name='ck_livekit_event_role'),
+        CheckConstraint("event_type IN ('participant_joined','participant_left')", name='ck_livekit_event_type'),
+    )
 
 class StatusHistory(Base):
     __tablename__ = 'appointment_status_history'

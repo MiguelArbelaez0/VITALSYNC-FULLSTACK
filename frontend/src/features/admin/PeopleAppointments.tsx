@@ -219,6 +219,13 @@ export function PeopleAppointments({ c }: { c: Context }) {
           label: "Estado",
           render: (r) => <State state={r.status} />,
         },
+        {
+          key: "virtual_session",
+          label: "Sala virtual",
+          render: (r) => r.modality !== "VIRTUAL" ? "—" : r.virtual_session?.provider_enabled
+            ? <State state={r.virtual_session.connection_state} />
+            : "Videollamada no configurada",
+        },
       ]}
       actions={(r) => (
         <>

@@ -1,6 +1,6 @@
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
-from fastapi import FastAPI, Depends, HTTPException, Request, Response, Query
+from fastapi import FastAPI, Depends, HTTPException, Request, Response, Query, Header, BackgroundTasks
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select, text, or_
@@ -14,11 +14,12 @@ from app.schemas.requests import Login, Register, Profile, PaymentInput, Reconci
 from app.repositories.queries import *
 from app.services import booking, payments, plans as plan_services, teleconsultations
 from app.services import teleconsultation, plan_terms as plan_services_terms
+from app.services import livekit_consultations
 from app.routers.doctor import router as doctor_router
 from app.routers.admin import router as admin_router
 from app.routers.recovery import router as recovery_router
 
-app = FastAPI(title='VITALSYNC · Portales integrados', version='1.0.0')
+app = FastAPI(title='VITALSYNC · Portales integrados', version='1.1.0')
 app.include_router(doctor_router)
 app.include_router(admin_router)
 app.include_router(recovery_router)
@@ -343,10 +344,12 @@ def appointment(appointment_id: int, user=Depends(current_user, scope='function'
     result['location'] = 'Sede VITALSYNC Bogotá (ficticia)' if result['modality'] == 'PRESENCIAL' else None
     if result['modality'] == 'VIRTUAL':
         vc = db.get(VirtualConsultation, appointment_id)
-        demo_enabled = DEMO_MODE and teleconsultation.DEMO_MODE
+        demo_enabled = DEMO_MODE and teleconsultation.DEMO_MODE and not livekit_consultations.enabled()
         result['virtual_status'] = teleconsultation.display_status(vc) if vc else 'PROGRAMADA'
         result['virtual_state'] = teleconsultation.state_dict(db.get(Appointment, appointment_id), vc, demo_enabled) if vc else None
         result['demo_mode'] = demo_enabled
+        result['livekit_enabled'] = livekit_consultations.enabled()
+        result['livekit_connection_state'] = vc.livekit_connection_state if vc else None
         result['patient_present_at'] = vc.patient_present_at if vc else None
         result['doctor_present_at'] = vc.doctor_present_at if vc else None
     else:
@@ -366,15 +369,27 @@ def virtual_teleconsult(appointment_id: int, user=Depends(current_user, scope='f
     result['patient'] = user.name
     result['message'] = teleconsultation.PROVIDER.message
     result['virtual_status'] = teleconsultation.display_status(session)
-    demo_enabled = DEMO_MODE and teleconsultation.DEMO_MODE
+    demo_enabled = DEMO_MODE and teleconsultation.DEMO_MODE and not livekit_consultations.enabled()
     result['virtual_state'] = teleconsultation.state_dict(db.get(Appointment, appointment_id), session, demo_enabled)
     result['demo_mode'] = demo_enabled
+    result['livekit_enabled'] = livekit_consultations.enabled()
+    result['livekit_connection_state'] = session.livekit_connection_state
     result['patient_present_at'] = session.patient_present_at
     result['doctor_present_at'] = session.doctor_present_at
     return result
 
+@app.post('/api/appointments/{appointment_id}/livekit-token')
+def patient_livekit_token(appointment_id: int, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
+    return livekit_consultations.issue_token(db, appointment_id, user)
+
+@app.post('/api/livekit/webhook')
+async def livekit_webhook(request: Request, authorization: str | None = Header(default=None), db: Session = Depends(get_db, scope='function')):
+    return livekit_consultations.process_webhook(db, await request.body(), authorization)
+
 @app.post('/api/appointments/{appointment_id}/teleconsult/status')
 def set_virtual_status(appointment_id: int, data: TeleconsultationStatus, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
+    if livekit_consultations.enabled():
+        raise HTTPException(409, 'Los cambios simulados están deshabilitados mientras la sala LiveKit está activa')
     if data.event:
         event = data.event
         return teleconsultation.apply_event(db, user, appointment_id, event, data.reason, demo_mode=DEMO_MODE and teleconsultation.DEMO_MODE)

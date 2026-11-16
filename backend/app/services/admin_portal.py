@@ -3,9 +3,10 @@ from datetime import datetime,timedelta,time
 from zoneinfo import ZoneInfo
 from sqlalchemy import select,func,text,delete,or_,and_
 from fastapi import HTTPException
-from app.models.entities import (User,Patient,Doctor,DoctorAccount,DoctorCredentialState,Specialty,Plan,PlanRule,PlanRevision,PatientPlan,SubscriptionTerms,Payment,PaymentTerms,Hold,Appointment,Availability,DoctorBlock,BlockRelease,StatusHistory,Notification,AuditEvent,AdminEvent,AdminPermission,RecoveryRequest,RefundRequest,RefundTransition,AppointmentReschedule,AppSetting,SessionToken,now)
+from app.models.entities import (User,Patient,Doctor,DoctorAccount,DoctorCredentialState,Specialty,Plan,PlanRule,PlanRevision,PatientPlan,SubscriptionTerms,Payment,PaymentTerms,Hold,Appointment,VirtualConsultation,Availability,DoctorBlock,BlockRelease,StatusHistory,Notification,AuditEvent,AdminEvent,AdminPermission,RecoveryRequest,RefundRequest,RefundTransition,AppointmentReschedule,AppSetting,SessionToken,now)
 from app.core.security import passwords
 from app.services import booking,payments,doctor_portal,plan_terms
+from app.services import livekit_consultations
 import secrets
 
 SCOPES=('dashboard','doctors','patients','appointments','availability','plans','payments','refunds','audit','settings','accounts')
@@ -47,8 +48,9 @@ def patient_dict(u,p):
 
 def appointment_dict(db,a):
     d=db.get(Doctor,a.doctor_id);snap=a.snapshot.terms if a.snapshot else {}
+    virtual=db.get(VirtualConsultation,a.id) if a.modality=='VIRTUAL' else None
     replacement=db.scalar(select(AppointmentReschedule).where(or_(AppointmentReschedule.previous_id==a.id,AppointmentReschedule.replacement_id==a.id)))
-    return dict(id=a.id,code=a.code,patient_id=a.patient_id,patient=db.get(User,a.patient_id).name,doctor_id=a.doctor_id,doctor=snap.get('doctor',d.name),specialty_id=d.specialty_id,specialty=snap.get('specialty',db.get(Specialty,d.specialty_id).name),plan_id=a.plan_id,plan=snap.get('plan',db.get(Plan,a.plan_id).name),starts_at=a.starts_at,ends_at=a.ends_at,modality=a.modality,status=a.status,version=a.version,copay=a.copay,payment_id=a.payment_id,cancellation_reason=a.cancellation_reason,cancelled_by=a.cancelled_by,completion_source=a.completion_source,clinically_attended=a.clinically_attended,reschedule=dict(previous_id=replacement.previous_id,replacement_id=replacement.replacement_id,reason=replacement.reason) if replacement else None)
+    return dict(id=a.id,code=a.code,patient_id=a.patient_id,patient=db.get(User,a.patient_id).name,doctor_id=a.doctor_id,doctor=snap.get('doctor',d.name),specialty_id=d.specialty_id,specialty=snap.get('specialty',db.get(Specialty,d.specialty_id).name),plan_id=a.plan_id,plan=snap.get('plan',db.get(Plan,a.plan_id).name),starts_at=a.starts_at,ends_at=a.ends_at,modality=a.modality,status=a.status,version=a.version,copay=a.copay,payment_id=a.payment_id,cancellation_reason=a.cancellation_reason,cancelled_by=a.cancelled_by,completion_source=a.completion_source,clinically_attended=a.clinically_attended,virtual_session=dict(provider_enabled=livekit_consultations.enabled(),connection_state=virtual.livekit_connection_state,last_event_at=virtual.livekit_last_event_at) if virtual else None,reschedule=dict(previous_id=replacement.previous_id,replacement_id=replacement.replacement_id,reason=replacement.reason) if replacement else None)
 
 def request_recovery(db,actor,user,reason):
     # The user lock serializes duplicate requests; password hashes remain untouched.

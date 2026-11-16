@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { CalendarDays, CheckCircle2, Clock3, Printer, MapPin, Monitor } from "lucide-react";
@@ -21,6 +21,7 @@ import {
 } from "../../components/common";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
+const LiveKitConsultation = lazy(() => import("./LiveKitConsultation").then((module) => ({ default: module.LiveKitConsultation })));
 export function Appointments() {
   const [tab, setTab] = useState("upcoming");
   const [modalityFilter, setModalityFilter] = useState<"ALL" | Modality>("ALL");
@@ -305,17 +306,17 @@ export function AppointmentDetail() {
         )}
         {a.modality === "VIRTUAL" && (
           <div className="notice virtual-link">
-            <strong>Teleconsulta simulada</strong>
+            <strong>{a.livekit_enabled ? "Sala de videollamada" : "Teleconsulta simulada"}</strong>
             {["CONFIRMED", "IN_PROGRESS", "TECHNICAL_ERROR"].includes(a.status) ? (
               <>
-                <p>Esta experiencia no usa conexión de audio o video.</p>
+                <p>{a.livekit_enabled ? "Sala privada de audio y video en tiempo real." : "Esta experiencia no usa conexión de audio o video."}</p>
                 <Button
                   className="virtual-teleconsult-button"
                   asChild
                 >
                   <Link to={"/portal/appointments/" + a.id + "/teleconsult"}>
                     <Monitor size={17} />
-                    Ver teleconsulta simulada
+                    {a.livekit_enabled ? "Ingresar a videollamada" : "Ver teleconsulta simulada"}
                   </Link>
                 </Button>
               </>
@@ -449,6 +450,7 @@ export function Teleconsultation() {
   if (q.isPending) return <Loading />;
   if (q.error) return <ErrorBox error={q.error} />;
   const a = q.data;
+  if (a.livekit_enabled) return <Suspense fallback={<Loading />}><LiveKitConsultation appointmentId={id ?? ""} role="PATIENT" /></Suspense>;
   const status = a.virtual_status ?? "PROGRAMADA";
   const virtual = a.virtual_state;
   const actionLabels: Record<string, string> = {

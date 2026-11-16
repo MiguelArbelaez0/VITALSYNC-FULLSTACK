@@ -84,6 +84,10 @@ const states: Record<string, string> = {
   PRESENCIAL: "Presencial",
   PLAN: "Plan",
   COPAY: "Copago",
+  WAITING: "Esperando participantes",
+  CONNECTED: "Participantes conectados",
+  RECONNECTING: "Reconectando",
+  DISCONNECTED: "Desconectada",
 };
 const labels: Record<string, string> = {
   id: "Identificador",

@@ -7,8 +7,13 @@ export default defineConfig({
   timeout: 60000,
   use: {
     baseURL: process.env.E2E_BASE_URL ?? "http://localhost:5188",
-    trace: "retain-on-failure",
-    screenshot: "only-on-failure",
+    launchOptions: {
+      args: process.env.E2E_LIVEKIT_PHYSICAL === "true"
+        ? ["--use-fake-ui-for-media-stream"]
+        : ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"],
+    },
+    trace: process.env.E2E_LIVEKIT_PHYSICAL === "true" ? "off" : "retain-on-failure",
+    screenshot: process.env.E2E_LIVEKIT_PHYSICAL === "true" ? "off" : "only-on-failure",
   },
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"] } },

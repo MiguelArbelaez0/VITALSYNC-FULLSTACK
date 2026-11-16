@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { lazy, Suspense, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import {
@@ -39,6 +39,7 @@ import { Dialog } from "../../components/ui/dialog";
 import "./doctor.css";
 import "./clinical.css";
 import { DoctorPasswordForm } from "./DoctorPassword";
+const LiveKitConsultation = lazy(() => import("../appointments/LiveKitConsultation").then((module) => ({ default: module.LiveKitConsultation })));
 
 const prefix = "/doctor";
 const today = () => dayKey(new Date().toISOString());
@@ -438,7 +439,9 @@ export function DoctorDetail() {
         <div className="medical-actions">
           {a.modality === "VIRTUAL" && (
             <Go to={prefix + "/appointments/" + id + "/teleconsult"}>
-              {a.status === "ATTENDED"
+              {a.livekit_enabled && a.status !== "ATTENDED"
+                ? "Iniciar videollamada"
+                : a.status === "ATTENDED"
                 ? "Ver registro de simulación"
                 : "Ver sala simulada"}
             </Go>
@@ -769,6 +772,7 @@ export function DoctorRoom() {
   if (q.isPending) return <Loading />;
   if (q.error) return <ErrorBox error={q.error} />;
   const a = q.data;
+  if (a.livekit_enabled) return <Suspense fallback={<Loading />}><LiveKitConsultation appointmentId={id ?? ""} role="DOCTOR" /></Suspense>;
   const state = a.virtual_state;
   const labels: Record<string, string> = {
     ADVANCE_DEMO_CLOCK: "Avanzar reloj de demostración",

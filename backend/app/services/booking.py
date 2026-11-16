@@ -119,7 +119,8 @@ def confirm(db, user, hold_id):
     record_appointment(db,a)
     db.add(StatusHistory(appointment_id=a.id, status='CONFIRMED', author_id=user.id, reason='Confirmación del paciente'))
     if a.modality == 'VIRTUAL':
-        db.add(VirtualConsultation(appointment_id=a.id, patient_id=a.patient_id, doctor_id=a.doctor_id))
+        db.add(VirtualConsultation(appointment_id=a.id, patient_id=a.patient_id, doctor_id=a.doctor_id,
+                                   livekit_room_name='vs-' + uuid4().hex))
     db.add(AuditEvent(actor_id=user.id, action='APPOINTMENT_CONFIRMED', entity_id=a.id))
     notify(db, user.id, f'Tu cita {a.code} ha sido confirmada. Consulta el comprobante en Mis citas.')
     return a
