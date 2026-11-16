@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams, useSearchParams } from "react-router-dom";
-import { CalendarDays, CheckCircle2, Clock3, Printer, MapPin, Monitor } from "lucide-react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { CalendarDays, CheckCircle2, Clock3, Printer, MapPin, Monitor, Video } from "lucide-react";
 import {
   api,
   post,
@@ -23,8 +23,32 @@ import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 const LiveKitConsultation = lazy(() => import("./LiveKitConsultation").then((module) => ({ default: module.LiveKitConsultation })));
 export function Appointments() {
+  const navigate = useNavigate();
   const [tab, setTab] = useState("upcoming");
   const [modalityFilter, setModalityFilter] = useState<"ALL" | Modality>("ALL");
+  const [demoDoctor, setDemoDoctor] = useState<{ id: number; name: string } | null>(null);
+  const [demoError, setDemoError] = useState("");
+  const [demoBusy, setDemoBusy] = useState(false);
+  const client = useQueryClient();
+  const me = useQuery({ queryKey: ["auth", "me"], queryFn: () => api<{ demo_patient?: boolean }>("/auth/me") });
+  const config = useQuery({ queryKey: ["config"], queryFn: () => api<Config>("/config") });
+  const demoDoctors = useQuery({
+    queryKey: ["demo-livekit-doctors"],
+    queryFn: () => api<{ id: number; name: string }[]>("/demo/livekit/doctors"),
+    enabled: !!me.data?.demo_patient && !!config.data?.demo_mode && !!config.data?.livekit_enabled,
+  });
+  async function createDemoCall() {
+    if (!demoDoctor) return;
+    setDemoBusy(true); setDemoError("");
+    try {
+      const result = await post<{ id: number }>("/demo/livekit-sessions", { doctor_id: demoDoctor.id });
+      await client.invalidateQueries();
+      setDemoDoctor(null);
+      navigate(`/portal/appointments/${result.id}/teleconsult`);
+    } catch (error) {
+      setDemoError(error instanceof Error ? error.message : "No se pudo crear la consulta de prueba.");
+    } finally { setDemoBusy(false); }
+  }
   const views: Record<string, string> = { upcoming: "upcoming", completed: "completed", history: "history", cancelled: "cancelled" };
   const q = useQuery({
     queryKey: ["appointments", tab],
@@ -45,7 +69,8 @@ export function Appointments() {
               : tab === "history"
                 ? a.status !== "CANCELLED" &&
                   (!["CONFIRMED", "IN_PROGRESS", "TECHNICAL_ERROR"].includes(a.status) || new Date(a.ends_at) <= new Date())
-                : ["CONFIRMED", "TECHNICAL_ERROR"].includes(a.status) && new Date(a.starts_at) > new Date()),
+                : ["CONFIRMED", "TECHNICAL_ERROR"].includes(a.status) &&
+                  (new Date(a.starts_at) > new Date() || (a.is_demo_test && new Date(a.ends_at) > new Date()))),
     )
     .sort((a, b) =>
       tab === "upcoming"
@@ -58,6 +83,20 @@ export function Appointments() {
         description="Consulta tus próximas citas y encuentra el historial de tu cuidado."
         action={<Go to="/portal/doctors">Agendar una cita</Go>}
       />
+      {!!demoDoctors.data?.length && (
+        <section className="panel demo-call-panel" aria-labelledby="demo-call-title">
+          <span className="eyebrow">MODO DEMOSTRACIÓN · LIVEKIT</span>
+          <h2 id="demo-call-title">Prueba una videollamada ahora</h2>
+          <p>Elige uno de los médicos académicos disponibles. La sesión se registra como consulta de prueba y no genera cobros ni modifica tu plan o cobertura.</p>
+          <div className="demo-call-doctors">
+            {demoDoctors.data.map((doctor) => (
+              <Button key={doctor.id} variant="outline" onClick={() => { setDemoError(""); setDemoDoctor(doctor); }}>
+                <Video size={17} /> Probar con {doctor.name}
+              </Button>
+            ))}
+          </div>
+        </section>
+      )}
       <div className="tabs" role="tablist" aria-label="Mis citas">
         {[
           ["upcoming", "Próximas citas"],
@@ -135,6 +174,7 @@ export function Appointments() {
                 <Badge status={a.completion_source === "DEMO" ? "DEMO_COMPLETED" : a.status} />
                 <h2>{a.doctor}</h2>
                 <p>{a.specialty}</p>
+                {a.is_demo_test && <p className="demo-appointment-label">Consulta académica de prueba · sin cobro ni uso de cobertura</p>}
                 <small>{a.code}</small>
                 {a.simulated_completed_at && <p>Simulación: {dateText(a.simulated_completed_at)} · {timeText(a.simulated_completed_at)}. No hubo atención médica real.</p>}
               </div>
@@ -155,6 +195,11 @@ export function Appointments() {
           ))}
         </div>
       )}
+      <Dialog open={!!demoDoctor} onOpenChange={(open) => { if (!open && !demoBusy) setDemoDoctor(null); }} title="Crear consulta académica de prueba" description="Se abrirá una sala privada para ti y el médico seleccionado.">
+        <div className="notice"><strong>{demoDoctor?.name}</strong><p>La sesión inicia inmediatamente. No consume plan, cobertura ni copago, y quedará diferenciada en tu historial y en la agenda médica.</p></div>
+        {demoError && <ErrorBox error={demoError} />}
+        <div className="dialog-actions"><Button variant="outline" type="button" disabled={demoBusy} onClick={() => setDemoDoctor(null)}>Mantener mi agenda</Button><Button type="button" disabled={demoBusy} onClick={() => void createDemoCall()}>{demoBusy ? "Creando…" : "Confirmar y entrar"}</Button></div>
+      </Dialog>
     </>
   );
 }
@@ -251,7 +296,7 @@ export function AppointmentDetail() {
           </div>
           <div>
             <dt>Plan utilizado</dt>
-            <dd>{a.plan}</dd>
+            <dd>{a.is_demo_test ? "Consulta académica de prueba" : a.plan}</dd>
           </div>
           <div>
             <dt>Copago simulado</dt>
@@ -262,6 +307,7 @@ export function AppointmentDetail() {
             <dd>{a.modality === 'VIRTUAL' ? 'Consulta virtual · Teleconsulta simulada' : 'Consulta presencial · Sede VITALSYNC Bogotá (ficticia)'}</dd>
           </div>
         </dl>
+        {a.is_demo_test && <p className="notice">Consulta académica de prueba · No consume cobertura ni genera cobros.</p>}
         {a.simulated_completed_at && <p className="notice">Finalizada (simulación) · {dateText(a.simulated_completed_at)} · {timeText(a.simulated_completed_at)}. No hubo atención médica real.</p>}
         {a.status === "CANCELLED" && (
           <div className="notice">
@@ -286,7 +332,7 @@ export function AppointmentDetail() {
             ))}
           </div>
         )}
-        {a.status === "CONFIRMED" && (
+        {a.status === "CONFIRMED" && !a.is_demo_test && (
           <div className="cancel-area">
             <p>
               Política de demostración: cancela con más de{" "}

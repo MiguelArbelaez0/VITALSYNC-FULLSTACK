@@ -1393,6 +1393,13 @@ dd {
   border-bottom-color: #228a96;
   font-weight: 600;
 }
+.demo-call-panel { margin: 20px 0; border-color: #b8e4e4; }
+.demo-call-panel h2 { margin: 8px 0; color: #124451; }
+.demo-call-panel > p { color: #58727c; max-width: 850px; }
+.demo-call-doctors { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.demo-call-doctors .btn { white-space: normal; }
+.demo-appointment-label { color: #176c76 !important; font-weight: 600; }
+.dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
 .appointments-list {
   display: flex;
   flex-direction: column;

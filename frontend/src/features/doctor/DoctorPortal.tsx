@@ -75,6 +75,7 @@ function AppointmentCard({ item }: { item: MedicalAppointment }) {
           <small>
             {dateText(item.starts_at)} · {item.code}
           </small>
+          {item.is_demo_test && <small className="demo-appointment-label">Consulta académica de prueba</small>}
         </div>
       </div>
       <div className="medical-modality">
@@ -184,6 +185,7 @@ export function DoctorDashboard() {
               ? `${displayDay(dayKey(d.next_appointment.starts_at))} · ${timeText(d.next_appointment.starts_at)} · ${d.next_appointment.modality === "VIRTUAL" ? "Consulta virtual simulada" : "Consulta presencial"}`
               : "Las nuevas reservas aparecerán aquí cuando un paciente confirme su cita."}
           </p>
+          {d.next_appointment?.is_demo_test && <small className="demo-appointment-label">Consulta académica de prueba</small>}
         </div>
         {d.next_appointment && (
           <Go to={prefix + "/appointments/" + d.next_appointment.id}>
@@ -393,6 +395,7 @@ export function DoctorDetail() {
             }
           />
         </div>
+        {a.is_demo_test && <div className="notice demo-appointment-label"><strong>Consulta académica de prueba</strong><p>Sesión inmediata de demostración. Sin cobro ni consumo de cobertura.</p></div>}
         <dl>
           <div>
             <dt>Modalidad</dt>
@@ -440,7 +443,7 @@ export function DoctorDetail() {
           {a.modality === "VIRTUAL" && (
             <Go to={prefix + "/appointments/" + id + "/teleconsult"}>
               {a.livekit_enabled && a.status !== "ATTENDED"
-                ? "Iniciar videollamada"
+                ? a.is_demo_test ? "Ingresar a videollamada" : "Iniciar videollamada"
                 : a.status === "ATTENDED"
                 ? "Ver registro de simulación"
                 : "Ver sala simulada"}

@@ -10,12 +10,12 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.core.config import (
-    LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_API_URL, LIVEKIT_ENABLED,
+    DEMO_MODE, LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_API_URL, LIVEKIT_ENABLED,
     LIVEKIT_PUBLIC_URL, LIVEKIT_TOKEN_TTL_SECONDS, TELECONSULT_ROOM_OPEN_MINUTES,
     TELECONSULT_WAIT_GRACE_MINUTES,
 )
 from app.models.entities import (
-    Appointment, AuditEvent, DoctorAccount, LiveKitRoomEvent, Notification,
+    Appointment, AuditEvent, DemoPatient, Doctor, DoctorAccount, LiveKitRoomEvent, Notification,
     StatusHistory, VirtualConsultation, now,
 )
 from app.services import appointment_lifecycle
@@ -38,6 +38,12 @@ def _room_membership(db: Session, appointment_id: int, user, doctor_id: int | No
     ).with_for_update())
     if not vc or vc.patient_id != appointment.patient_id or vc.doctor_id != appointment.doctor_id:
         raise HTTPException(404, 'Sala virtual no encontrada')
+    if vc.is_demo_test or appointment.is_demo_test:
+        if not (DEMO_MODE and vc.is_demo_test and appointment.is_demo_test):
+            raise HTTPException(403, 'La consulta académica está deshabilitada fuera del modo demostración')
+        demo_doctor = db.get(Doctor, appointment.doctor_id)
+        if not demo_doctor or not demo_doctor.is_demo_doctor or not db.get(DemoPatient, appointment.patient_id):
+            raise HTTPException(403, 'Esta consulta ya no está vinculada a cuentas de demostración autorizadas')
     if doctor_id is None:
         if user.role != 'PATIENT' or user.id != appointment.patient_id:
             raise HTTPException(404, 'Cita virtual no encontrada')
@@ -53,9 +59,10 @@ def _room_membership(db: Session, appointment_id: int, user, doctor_id: int | No
     if not terminal and appointment.status not in {'CONFIRMED', 'IN_PROGRESS', 'TECHNICAL_ERROR'}:
         raise HTTPException(409, 'El estado actual de la cita no permite ingresar a video')
     current = now()
-    if not terminal and current < appointment.starts_at - timedelta(minutes=TELECONSULT_ROOM_OPEN_MINUTES):
+    immediate_demo = bool(vc.is_demo_test and appointment.is_demo_test and DEMO_MODE)
+    if not terminal and not immediate_demo and current < appointment.starts_at - timedelta(minutes=TELECONSULT_ROOM_OPEN_MINUTES):
         raise HTTPException(409, 'La sala se habilita cinco minutos antes de la cita')
-    if not terminal and current > appointment.ends_at + timedelta(minutes=TELECONSULT_WAIT_GRACE_MINUTES):
+    if not terminal and not immediate_demo and current > appointment.ends_at + timedelta(minutes=TELECONSULT_WAIT_GRACE_MINUTES):
         raise HTTPException(409, 'La ventana de ingreso a la cita ya terminó')
     return appointment, vc, role
 

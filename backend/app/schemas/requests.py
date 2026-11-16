@@ -85,6 +85,9 @@ class HoldInput(Input):
     availability_id: int = Field(gt=0)
     modality: Literal['PRESENCIAL', 'VIRTUAL'] = 'PRESENCIAL'
 
+class DemoLiveKitTestInput(Input):
+    doctor_id: int = Field(gt=0)
+
 class TeleconsultationStatus(Input):
     event: Literal['ADVANCE_DEMO_CLOCK','OPEN_ROOM','PATIENT_JOIN','DOCTOR_JOIN','START','FINALIZE','PATIENT_ABSENT','DOCTOR_ABSENT','TECHNICAL_ERROR','RETRY'] | None = None
     status: Literal['SALA_DISPONIBLE','PACIENTE_EN_ESPERA','MEDICO_EN_ESPERA','EN_ATENCION','FINALIZADA','PACIENTE_AUSENTE','MEDICO_AUSENTE','ERROR_TECNICO'] | None = None

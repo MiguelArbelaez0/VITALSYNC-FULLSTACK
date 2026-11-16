@@ -2,7 +2,8 @@
 from datetime import datetime, timedelta
 import secrets
 from zoneinfo import ZoneInfo
-from sqlalchemy import select, text
+from sqlalchemy import select, text, inspect, Table, MetaData
+from types import SimpleNamespace
 from app.db.session import SessionLocal
 from app.models.entities import *
 from app.core.security import passwords
@@ -30,6 +31,8 @@ def seed():
             db.add(Notification(patient_id=u.id, message='Bienvenida a VITALSYNC. Activa un plan para solicitar tu primera cita.'))
         names = ['Medicina general', 'Cardiología', 'Dermatología', 'Psicología', 'Pediatría']
         ids = []
+        has_demo_doctor_flag = 'is_demo_doctor' in {column['name'] for column in inspect(db.connection()).get_columns('doctors')}
+        legacy_doctors = None if has_demo_doctor_flag else Table('doctors', MetaData(), autoload_with=db.connection())
         for name in names:
             s = db.scalar(select(Specialty).where(Specialty.name == name))
             if not s:
@@ -41,11 +44,21 @@ def seed():
             if not db.scalar(select(Plan.id).where(Plan.name == name)):
                 db.add(Plan(name=name, price=price, copay=copay, specialty_ids=covered, modalities=modalities, description=desc, duration_days=30))
         for i, name in enumerate(['Dra. Isabella Ríos', 'Dr. Alejandro Méndez', 'Dra. Camila Restrepo', 'Dra. Sofía Herrera', 'Dr. Nicolás Vargas']):
-            d = db.scalar(select(Doctor).where(Doctor.name == name))
-            if not d:
-                d = Doctor(name=name, specialty_id=ids[i], bio=f'Profesional ficticio de demostración en {names[i].lower()}. Atención cercana, orientación preventiva y acompañamiento personalizado. Consultas presenciales y virtuales simuladas de 30 minutos.', modalities=['PRESENCIAL','VIRTUAL'])
-                db.add(d)
-                db.flush()
+            bio=f'Profesional ficticio de demostración en {names[i].lower()}. Atención cercana, orientación preventiva y acompañamiento personalizado. Consultas presenciales y virtuales simuladas de 30 minutos.'
+            if has_demo_doctor_flag:
+                d = db.scalar(select(Doctor).where(Doctor.name == name))
+                if not d:
+                    d = Doctor(name=name, specialty_id=ids[i], bio=bio, modalities=['PRESENCIAL','VIRTUAL'])
+                    db.add(d)
+                    db.flush()
+                d.is_demo_doctor = True
+            else:
+                row = db.execute(select(legacy_doctors).where(legacy_doctors.c.name == name)).mappings().first()
+                if row:
+                    d = SimpleNamespace(id=row['id'], modalities=row['modalities'])
+                else:
+                    doctor_id = db.execute(legacy_doctors.insert().values(name=name, specialty_id=ids[i], bio=bio, modalities=['PRESENCIAL','VIRTUAL'], enabled=True).returning(legacy_doctors.c.id)).scalar_one()
+                    d = SimpleNamespace(id=doctor_id, modalities=['PRESENCIAL','VIRTUAL'])
             today = datetime.now(ZoneInfo('America/Bogota')).replace(hour=9, minute=0, second=0, microsecond=0)
             for day in range(1, 22):
                 for hour in [9, 10, 11, 14, 15, 16]:

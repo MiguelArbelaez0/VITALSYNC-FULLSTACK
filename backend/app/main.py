@@ -10,11 +10,12 @@ from app.core.config import *
 from app.core.security import current_user, authenticated_user, doctor_for_user, passwords, create_session, digest
 from app.db.session import get_db
 from app.models.entities import *
-from app.schemas.requests import Login, Register, Profile, PaymentInput, Reconcile, HoldInput, Cancel, CancelPlanInput, TeleconsultationStatus
+from app.schemas.requests import Login, Register, Profile, PaymentInput, Reconcile, HoldInput, Cancel, CancelPlanInput, TeleconsultationStatus, DemoLiveKitTestInput
 from app.repositories.queries import *
 from app.services import booking, payments, plans as plan_services, teleconsultations
 from app.services import teleconsultation, plan_terms as plan_services_terms
 from app.services import livekit_consultations
+from app.services import demo_livekit
 from app.routers.doctor import router as doctor_router
 from app.routers.admin import router as admin_router
 from app.routers.recovery import router as recovery_router
@@ -76,7 +77,7 @@ def health(db: Session = Depends(get_db, scope='function')):
 
 @app.get('/api/config')
 def config():
-    return dict(demo_mode=DEMO_MODE, hold_minutes=HOLD_MINUTES, cancellation_hours=CANCELLATION_HOURS, teleconsult_room_open_minutes=TELECONSULT_ROOM_OPEN_MINUTES, teleconsult_wait_grace_minutes=TELECONSULT_WAIT_GRACE_MINUTES, timezone='America/Bogota')
+    return dict(demo_mode=DEMO_MODE, livekit_enabled=livekit_consultations.enabled(), hold_minutes=HOLD_MINUTES, cancellation_hours=CANCELLATION_HOURS, teleconsult_room_open_minutes=TELECONSULT_ROOM_OPEN_MINUTES, teleconsult_wait_grace_minutes=TELECONSULT_WAIT_GRACE_MINUTES, timezone='America/Bogota')
 
 def profile_dict(db, u):
     p = db.get(Patient, u.id)
@@ -92,6 +93,7 @@ def profile_dict(db, u):
         document_type=p.document_type if p else None,
         document_masked=('•' * max(0, len(number) - 4) + number[-4:]) if number else None,
         has_document=bool(number),
+        demo_patient=bool(DEMO_MODE and db.get(DemoPatient, u.id)),
         account_status=u.status,
         registered_at=u.created_at,
         privacy_notice_version=u.privacy_notice_version,
@@ -320,6 +322,16 @@ def reconcile(payment_id: int, data: Reconcile, user=Depends(current_user, scope
 def confirm(hold_id: int, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
     a = booking.confirm(db, user, hold_id)
     return {'id': a.id, 'code': a.code, 'status': a.status}
+
+@app.get('/api/demo/livekit/doctors')
+def demo_livekit_doctors(user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
+    return demo_livekit.doctors(db, user)
+
+@app.post('/api/demo/livekit-sessions', status_code=201)
+def create_demo_livekit_session(data: DemoLiveKitTestInput, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
+    a = demo_livekit.create(db, user, data.doctor_id)
+    return {'id': a.id, 'code': a.code, 'status': a.status, 'doctor_id': a.doctor_id,
+            'starts_at': a.starts_at, 'is_demo_test': True, 'appointment_label': 'Consulta académica de prueba'}
 
 @app.get('/api/appointments')
 def appointments(view: str = Query('all', pattern='^(all|upcoming|completed|history|cancelled)$'), user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):

@@ -2,9 +2,9 @@
 
 ## Alcance
 
-La rama `feature/video-calls-v1.1.0` agrega LiveKit autohospedado como proveedor opcional para las citas virtuales que ya registra VITALSYNC. No crea reservas independientes. La versión estable `v1.0.0` y su etiqueta no se modifican.
+La rama `feature/video-calls-v1.1.0` agrega LiveKit autohospedado como proveedor opcional para las citas virtuales que ya registra VITALSYNC, junto con una ruta de consulta académica inmediata, exclusiva de `DEMO_MODE`. La versión estable `v1.0.0` y su etiqueta no se modifican.
 
-La videollamada solo se habilita si el entorno tiene LiveKit configurado. Si LiveKit está apagado, continúan disponibles las pantallas demostrativas existentes. Pagos, citas presenciales e historias clínicas permanecen fuera del flujo audiovisual.
+La videollamada solo se habilita si el entorno tiene LiveKit configurado. Si LiveKit está apagado, continúan disponibles las pantallas demostrativas existentes. Pagos, citas presenciales e historias clínicas permanecen fuera del flujo audiovisual. Las pruebas inmediatas no usan los horarios del calendario, ni consumen planes, cobertura o copagos, ni modifican pagos o suscripciones.
 
 ## Arquitectura
 
@@ -13,6 +13,9 @@ La videollamada solo se habilita si el entorno tiene LiveKit configurado. Si Liv
 - PostgreSQL conserva el nombre estable de la sala por cita, estado de conexión, auditoría e historial de eventos administrativos. Nunca almacena audio, video ni transcripciones.
 - El servidor LiveKit se incorpora al Compose existente `vitalsync` bajo el perfil `video`; el volumen de PostgreSQL no cambia.
 - Los webhooks firmados por LiveKit registran entradas y desconexiones. `event_id` único hace idempotente el registro de entregas repetidas.
+- `POST /api/demo/livekit-sessions` crea una cita marcada `is_demo_test` vinculada al paciente y al médico autorizado. Una transacción con bloqueo por médico hace idempotentes los clics repetidos y evita dos sesiones simultáneas incompatibles. Un índice parcial PostgreSQL protege además al médico frente a carreras concurrentes.
+- Solo se listan médicos vinculados a una cuenta activa y marcada como profesional demo; el paciente también debe tener registro explícito en `demo_patients`. El navegador no puede activar esta política enviando un parámetro.
+- Las citas de prueba no tienen retención, plan, pago ni copago. La migración `20261122_demo_instant_calls` permite esas columnas nulas solo para citas marcadas como demo y virtuales; las citas ordinarias siguen exigiendo sus relaciones de cobertura y retención.
 
 LiveKit documenta `PreJoin` para previsualizar y seleccionar cámara y micrófono antes de conectar, y `LiveKitRoom` como proveedor React de la sesión ([PreJoin](https://docs.livekit.io/reference/components/react/component/prejoin/), [LiveKitRoom](https://docs.livekit.io/reference/components/react/component/livekitroom/)).
 
@@ -54,6 +57,8 @@ La configuración local usa credenciales generadas y puertos ligados a loopback.
 
 Rutas de acceso: `POST /api/appointments/{id}/livekit-token` para el titular paciente y `POST /api/doctor/appointments/{id}/livekit-token` para el médico asignado. La finalización formal corresponde a `POST /api/doctor/appointments/{id}/livekit-finalize`.
 
+En **Mis citas** aparece **Prueba una videollamada ahora** únicamente para un paciente identificado por el backend como cuenta demo cuando `DEMO_MODE` y LiveKit están activos. El paciente elige uno de los cinco médicos académicos, confirma y entra a una sala privada de LiveKit que también aparece de inmediato en la agenda del profesional. El detalle lleva la etiqueta **Consulta académica de prueba**. Se conservan las verificaciones de rol, titularidad y asignación. El bypass de horario se permite solo para una cita marcada demo cuando el backend mantiene `DEMO_MODE=true`; las citas normales siguen respetando su ventana.
+
 ## Estados y ciclo
 
 La cita virtual conserva su ciclo de negocio actual. El estado técnico LiveKit se muestra aparte como `WAITING`, `CONNECTED`, `RECONNECTING` o `DISCONNECTED`. Cada sala tiene un nombre aleatorio estable creado al confirmar la cita; recargar o solicitar otro token no genera una sala nueva.
@@ -79,6 +84,8 @@ El servicio corre dentro de la red del proyecto Compose `vitalsync` y se inicia 
 Los puertos publicados en este Compose local quedan asociados a `127.0.0.1`. LiveKit documenta además los puertos ICE/TURN y requiere una dirección pública conocida para despliegues detrás de NAT ([puertos y firewall](https://docs.livekit.io/transport/self-hosting/ports-firewall/), [despliegue self-hosted](https://docs.livekit.io/transport/self-hosting/deployment/)).
 
 ## Pruebas
+
+Las pruebas de la ruta académica cubren los cinco médicos, citas sin plan ni pago, repetición idempotente, bloqueo a pacientes normales y rechazo de un médico ocupado. Las pruebas de migración verifican una única cabeza Alembic. El E2E real de medios inicia la prueba desde **Mis citas**, confirma que el médico ve la etiqueta académica en su agenda y conecta ambas cuentas usando la cámara/micrófono físicos; después verifica finalización formal e historial.
 
 Backend: `.\infrastructure\Test-Backend.ps1` crea una base de pruebas aislada con prefijo `vitalsync_test_audit_`; las pruebas no usan ni truncan la base `vitalsync`.
 

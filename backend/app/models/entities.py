@@ -58,6 +58,7 @@ class Doctor(Base):
     bio = Column(Text, nullable=False)
     modalities = Column(JSONB, nullable=False, default=lambda: ['PRESENCIAL'])
     enabled = Column(Boolean, default=True, nullable=False)
+    is_demo_doctor = Column(Boolean, nullable=False, default=False, server_default='false')
     __table_args__ = (
         CheckConstraint("jsonb_typeof(modalities) = 'array' AND modalities <> '[]'::jsonb AND modalities <@ '[\"PRESENCIAL\",\"VIRTUAL\"]'::jsonb", name='ck_doctors_modalities'),
         Index('ix_doctors_modalities_gin', 'modalities', postgresql_using='gin'),
@@ -174,8 +175,8 @@ class Appointment(Base):
     code = Column(String(30), nullable=False, unique=True)
     patient_id = Column(Integer, ForeignKey('patients.id'), nullable=False, index=True)
     doctor_id = Column(Integer, ForeignKey('doctors.id'), nullable=False, index=True)
-    hold_id = Column(Integer, ForeignKey('appointment_holds.id'), unique=True, nullable=False)
-    plan_id = Column(Integer, ForeignKey('plans.id'), nullable=False)
+    hold_id = Column(Integer, ForeignKey('appointment_holds.id'), unique=True, nullable=True)
+    plan_id = Column(Integer, ForeignKey('plans.id'), nullable=True)
     payment_id = Column(Integer, ForeignKey('payments.id'), unique=True)
     starts_at = Column(DateTime(timezone=True), nullable=False)
     ends_at = Column(DateTime(timezone=True), nullable=False)
@@ -186,6 +187,7 @@ class Appointment(Base):
     completion_source = Column(String(8))
     simulated_completed_at = Column(DateTime(timezone=True))
     clinically_attended = Column(Boolean, nullable=False, default=False, server_default='false')
+    is_demo_test = Column(Boolean, nullable=False, default=False, server_default='false')
     cancelled_at = Column(DateTime(timezone=True))
     cancelled_by = Column(Integer, ForeignKey('users.id'))
     cancellation_reason = Column(Text)
@@ -198,12 +200,14 @@ class Appointment(Base):
         CheckConstraint("(completion_source IS NULL AND simulated_completed_at IS NULL) OR (completion_source = 'DEMO' AND simulated_completed_at IS NOT NULL AND status = 'ATTENDED' AND clinically_attended = false)", name='ck_demo_completion'),
         CheckConstraint("modality IN ('PRESENCIAL','VIRTUAL')"),
         CheckConstraint('ends_at > starts_at'),
+        CheckConstraint("(is_demo_test AND hold_id IS NULL AND plan_id IS NULL AND payment_id IS NULL AND copay = 0 AND modality = 'VIRTUAL') OR (NOT is_demo_test AND hold_id IS NOT NULL AND plan_id IS NOT NULL)", name='ck_appointments_demo_test_financial_isolation'),
         Index('uq_confirmed_slot', 'doctor_id', 'starts_at', unique=True, postgresql_where=status.in_(['CONFIRMED', 'IN_PROGRESS', 'TECHNICAL_ERROR'])),
     )
 
 class VirtualConsultation(Base):
     __tablename__ = 'virtual_consultations'
     appointment_id = Column(Integer, ForeignKey('appointments.id', ondelete='CASCADE'), primary_key=True)
+    is_demo_test = Column(Boolean, nullable=False, default=False, server_default='false')
     patient_id = Column(Integer, ForeignKey('patients.id'), nullable=False, index=True)
     doctor_id = Column(Integer, ForeignKey('doctors.id'), nullable=False, index=True)
     status = Column(String(24), nullable=False, default='PROGRAMADA')

@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from app.models.entities import Appointment, Specialty, User, StatusHistory, AuditEvent, VirtualConsultation, now
 from app.services import booking
+from app.services import livekit_consultations
 
 BOGOTA = ZoneInfo('America/Bogota')
 ACTIVE = ('CONFIRMED', 'IN_PROGRESS', 'TECHNICAL_ERROR')
@@ -34,6 +35,7 @@ def appointments_query(doctor):
 
 
 def appointment_dict(db, doctor, a, patient_name=None):
+    virtual = db.get(VirtualConsultation, a.id) if a.modality == 'VIRTUAL' else None
     # Deliberate allowlist: no payments, phone, identity document or data from other professionals.
     return dict(id=a.id, code=a.code, patient_id=a.patient_id,
                 patient=patient_name if patient_name is not None else db.get(User, a.patient_id).name,
@@ -42,7 +44,11 @@ def appointment_dict(db, doctor, a, patient_name=None):
                 duration_minutes=int((a.ends_at-a.starts_at).total_seconds()/60),
                 modality=a.modality, status=a.status, version=a.version,
                 completion_source=a.completion_source, simulated_completed_at=a.simulated_completed_at,
-                clinically_attended=a.clinically_attended, cancelled_at=a.cancelled_at,
+                clinically_attended=a.clinically_attended, is_demo_test=a.is_demo_test,
+                appointment_label='Consulta académica de prueba' if a.is_demo_test else None,
+                livekit_enabled=livekit_consultations.enabled() if virtual else False,
+                livekit_connection_state=virtual.livekit_connection_state if virtual else None,
+                cancelled_at=a.cancelled_at,
                 cancellation_reason=a.cancellation_reason)
 
 
