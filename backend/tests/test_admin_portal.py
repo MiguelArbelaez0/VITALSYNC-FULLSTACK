@@ -55,13 +55,15 @@ def test_admin_module_scope_is_enforced_server_side(client):
 def test_admin_doctor_creation_creates_private_recovery_without_exposing_password(client):
     admin = login_admin(client)
     response = admin.post('/api/admin/doctors', json={
-        'name': 'Dra. Prueba Administrativa', 'email': 'admin.doctor+' + uuid4().hex[:10] + '@vitalsync.demo',
+        'name': 'Dra. Prueba Administrativa',
         'specialty_id': 1, 'bio': 'Profesional ficticia para verificar el acceso del portal administrativo.',
         'modalities': ['VIRTUAL', 'PRESENCIAL'], 'enabled': True, 'reason': 'Registro profesional de prueba',
     })
     assert response.status_code == 201, response.text
     assert 'password' not in response.text.lower()
     row = response.json()
+    assert row['email'].startswith('prueba.administrativa')
+    assert row['email'].endswith('@doctor.vitalsync.demo')
     with SessionLocal() as db:
         link = db.scalar(select(DoctorAccount).where(DoctorAccount.doctor_id == row['id']))
         user = db.get(User, link.user_id)

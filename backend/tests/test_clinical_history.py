@@ -69,7 +69,9 @@ def test_provision_avoids_case_insensitive_email_collisions():
         before=existing.password_hash
         result=provision(db,db.get(User,1))
         created=next(r for r in result['new_credentials'] if r['doctor_id']==1)
-        assert created['email']!='medico-1@vitalsync.demo'
+        assert created['email']!='juan.perez@doctor.vitalsync.demo'
+        assert created['email'].endswith('@doctor.vitalsync.demo')
+        assert '.' in created['email'].split('@',1)[0]
         assert existing.password_hash==before and existing.role=='PATIENT'
 
 

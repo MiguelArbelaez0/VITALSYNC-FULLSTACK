@@ -110,6 +110,11 @@ export default function AdminPortal() {
     queryFn: () => api<Options>("/admin/options"),
     retry: false,
   });
+  const appConfig = useQuery({
+    queryKey: ["config"],
+    queryFn: () => api<{ demo_mode: boolean }>("/config"),
+    retry: false,
+  });
   const query = params.toString();
   const q = useQuery({
     queryKey: ["admin", resource, query],
@@ -283,19 +288,22 @@ export default function AdminPortal() {
                     path: "/doctors",
                     fields: [
                       c.doctorFields[0],
-                      {
-                        key: "email",
-                        label: "Correo individual",
-                        type: "email",
-                      },
+                      ...(appConfig.data?.demo_mode === false
+                        ? [{
+                            key: "email",
+                            label: "Correo institucional",
+                            type: "email",
+                          }]
+                        : []),
                       ...c.doctorFields.slice(1),
                     ],
                     initial: {
                       enabled: true,
                       modalities: ["VIRTUAL", "PRESENCIAL"],
                     },
-                    description:
-                      "Se creará una cuenta individual y una solicitud de recuperación privada. No se publican contraseñas en la aplicación.",
+                    description: appConfig.data?.demo_mode
+                      ? "Se creará una cuenta individual autorizada con correo nombre.apellido@doctor.vitalsync.demo; si hay coincidencia se añade un identificador estable. Se registra la solicitud privada de recuperación. No se publican contraseñas en la aplicación."
+                      : "Se creará una cuenta individual autorizada con el correo institucional indicado y una solicitud privada de recuperación. No se publican contraseñas en la aplicación.",
                   })
                 }
               >

@@ -77,6 +77,22 @@ function wrapper(node: React.ReactNode, path = "/") {
   );
 }
 describe("Autenticación y acceso", () => {
+  it("ofrece inicio y registro de paciente en una sola ruta de autenticación", async () => {
+    mockApi({});
+    wrapper(
+      <Routes>
+        <Route path="/auth" element={<Auth />} />
+      </Routes>,
+      "/auth",
+    );
+    expect(screen.getByRole("button", { name: "Mostrar inicio de sesión" })).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(screen.getByRole("button", { name: "Mostrar registro de paciente" }));
+    expect(await screen.findByPlaceholderText("Tus nombres")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mostrar registro de paciente" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText(/Este formulario crea únicamente cuentas de paciente/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Crear mi cuenta" }));
+    expect(await screen.findByText("Ingresa tus nombres")).toBeInTheDocument();
+  });
   it("cierra la sesión y retira el contenido protegido", async () => {
     let loggedOut = false;
     mockApi({}, (path) => {
@@ -84,7 +100,7 @@ describe("Autenticación y acceso", () => {
       if(path === '/auth/me' && loggedOut) return respond({detail:'Sesión expirada'},401);
     });
     function Exit() { const {logout} = useAuth(); return <button onClick={()=>void logout()}>Salir de prueba</button>; }
-    wrapper(<Routes><Route element={<Protected/>}><Route path="/portal" element={<Exit/>}/></Route><Route path="/login" element={<p>Sesión finalizada</p>}/></Routes>, '/portal');
+    wrapper(<Routes><Route element={<Protected/>}><Route path="/portal" element={<Exit/>}/></Route><Route path="/auth" element={<p>Sesión finalizada</p>}/></Routes>, '/portal');
     await userEvent.click(await screen.findByRole('button',{name:'Salir de prueba'}));
     expect(await screen.findByText('Sesión finalizada')).toBeInTheDocument();
   });
@@ -190,10 +206,28 @@ describe("Autenticación y acceso", () => {
     );
     await userEvent.type(screen.getByLabelText("Contraseña"), "SamplePassA1!");
     await userEvent.click(
-      screen.getByRole("button", { name: "Iniciar sesión" }),
+      screen.getByRole("button", { name: /^Iniciar sesión$/ }),
     );
     expect(await screen.findByText("Portal abierto")).toBeInTheDocument();
     expect(fetch.mock.calls.some((c) => c[0] === "/api/auth/login")).toBe(true);
+  });
+  it("dirige un médico al portal usando el rol respondido por la API", async () => {
+    const doctor = { ...user, role: "DOCTOR", doctor_id: 3 };
+    const fetch = mockApi({}, (path) =>
+      path === "/auth/login" ? respond(doctor) : undefined,
+    );
+    wrapper(
+      <Routes>
+        <Route path="/auth" element={<Auth />} />
+        <Route path="/doctor" element={<p>Portal médico abierto</p>} />
+      </Routes>,
+      "/auth",
+    );
+    await userEvent.type(screen.getByLabelText("Correo electrónico"), "medico@example.com");
+    await userEvent.type(screen.getByLabelText("Contraseña"), "SamplePassA1!");
+    await userEvent.click(screen.getByRole("button", { name: /^Iniciar sesión$/ }));
+    expect(await screen.findByText("Portal médico abierto")).toBeInTheDocument();
+    expect(fetch.mock.calls.some((call) => call[0] === "/api/auth/login")).toBe(true);
   });
   it("redirige una sesión no autenticada", async () => {
     mockApi({}, (path) =>
@@ -206,7 +240,7 @@ describe("Autenticación y acceso", () => {
         <Route element={<Protected />}>
           <Route path="/portal" element={<p>Privado</p>} />
         </Route>
-        <Route path="/login" element={<p>Acceso requerido</p>} />
+        <Route path="/auth" element={<p>Acceso requerido</p>} />
       </Routes>,
       "/portal",
     );

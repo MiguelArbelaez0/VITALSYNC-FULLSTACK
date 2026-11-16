@@ -1692,6 +1692,36 @@ dd {
   font-size: 30px;
   margin: 12px 0;
 }
+.auth-mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin: 22px 0 20px;
+  padding: 4px;
+  border: 1px solid #d7e8e9;
+  border-radius: 12px;
+  background: #f1f7f9;
+}
+.auth-mode-switch button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #365763;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.auth-mode-switch button[aria-pressed="true"] {
+  background: #fff;
+  color: #0a5365;
+  box-shadow: 0 1px 4px #0a53651a;
+}
+.auth-mode-switch button:focus-visible {
+  outline: 3px solid #138d96;
+  outline-offset: 2px;
+}
 .form-content > p {
   font-size: 13px;
 }

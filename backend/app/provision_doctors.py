@@ -15,11 +15,11 @@ def main():
     parser = argparse.ArgumentParser(description='Aprovisiona únicamente profesionales sin cuenta y exporta sus claves iniciales una sola vez')
     parser.add_argument('--output',required=True,type=Path)
     parser.add_argument('--actor-email',default='admin@vitalsync.demo')
-    parser.add_argument('--domain',default='vitalsync.demo')
+    parser.add_argument('--domain',default='doctor.vitalsync.demo')
     args=parser.parse_args()
     if not re.fullmatch(r'[a-z0-9][a-z0-9.-]*\.[a-z]{2,}',args.domain) or '..' in args.domain:
         raise SystemExit('Dominio de correo inválido')
-    if not DEMO_MODE and args.domain=='vitalsync.demo':
+    if not DEMO_MODE and args.domain=='doctor.vitalsync.demo':
         raise SystemExit('En un entorno no demostrativo se requiere un dominio institucional explícito')
     created_file=False
     try:

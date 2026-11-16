@@ -23,7 +23,7 @@ powershell -ExecutionPolicy Bypass -File infrastructure/Start-Vitalsync.ps1
 | Servicio | Dirección local predeterminada |
 | --- | --- |
 | Portal React | http://localhost:5188 |
-| Login compartido | http://localhost:5188/login |
+| Autenticación compartida | http://localhost:5188/auth |
 | Portal paciente | http://localhost:5188/portal |
 | Portal médico | http://localhost:5188/doctor |
 | Portal administrador | http://localhost:5188/admin |
@@ -256,7 +256,7 @@ La implementación médica comparte la aplicación y las sesiones existentes. Pa
 docker compose -p vitalsync up -d --build --wait
 ```
 
-Con `DEMO_MODE=true`, el seed vincula `medico@vitalsync.demo` al Dr. Alejandro Méndez sin duplicar profesionales ni sobrescribir contraseñas. Inicia sesión en `/login`; el médico accede a `/doctor` y el paciente a `/portal`.
+Con `DEMO_MODE=true`, el seed vincula `medico@vitalsync.demo` al Dr. Alejandro Méndez sin duplicar profesionales ni sobrescribir contraseñas. Todos inician sesión desde `/auth`; el backend identifica el rol y la aplicación dirige al médico a `/doctor`, al administrador a `/admin` y al paciente a `/portal`. `/login` y `/register` siguen funcionando como enlaces compatibles. El registro público crea únicamente pacientes y admite correos personales válidos. Las cuentas médicas nuevas se crean desde **Administración → Médicos**, con el formato `nombre.apellido@doctor.vitalsync.demo`; si hay una coincidencia se añade un identificador estable. Las cuentas previas mantienen su correo y contraseña. Para recuperación, usa el enlace disponible en `/auth`; las solicitudes administrativas siguen el flujo privado documentado.
 
 Consulta [arquitectura, rutas, migración, pruebas y acceso local del portal médico](docs/doctor-portal.md).
 

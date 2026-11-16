@@ -7,6 +7,8 @@ from app.models.entities import (User,Patient,Doctor,DoctorAccount,DoctorCredent
 from app.core.security import passwords
 from app.services import booking,payments,doctor_portal,plan_terms
 from app.services import livekit_consultations
+from app.services.doctor_accounts import available_doctor_email
+from app.core.config import DEMO_MODE
 import secrets
 
 SCOPES=('dashboard','doctors','patients','appointments','availability','plans','payments','refunds','audit','settings','accounts')
@@ -65,10 +67,12 @@ def request_recovery(db,actor,user,reason):
 def create_doctor(db,actor,data):
     db.execute(text('SELECT pg_advisory_xact_lock(861995)'))
     get(db,Specialty,data.specialty_id)
-    if db.scalar(select(User.id).where(func.lower(User.email)==str(data.email).lower())):fail('El correo ya pertenece a una cuenta')
+    if not DEMO_MODE and not data.email:fail('Indica el correo institucional del profesional',422)
+    if data.email and db.scalar(select(User.id).where(func.lower(User.email)==str(data.email).lower())) and not DEMO_MODE:fail('El correo ya pertenece a una cuenta')
     if db.scalar(select(Doctor.id).where(func.lower(Doctor.name)==data.name.lower())):fail('Ya existe un profesional con ese nombre')
     d=Doctor(**data.model_dump(exclude={'reason','email'}));db.add(d);db.flush()
-    u=User(email=str(data.email).lower(),name=d.name,role='DOCTOR',status='ACTIVE' if d.enabled else 'DISABLED',password_hash=passwords.hash(secrets.token_urlsafe(48)))
+    email=available_doctor_email(db,d.name,d.id) if DEMO_MODE else str(data.email).lower()
+    u=User(email=email,name=d.name,role='DOCTOR',status='ACTIVE' if d.enabled else 'DISABLED',password_hash=passwords.hash(secrets.token_urlsafe(48)))
     db.add(u);db.flush();db.add(DoctorAccount(user_id=u.id,doctor_id=d.id));db.flush();db.add(DoctorCredentialState(user_id=u.id,must_change_password=True))
     if d.enabled:request_recovery(db,actor,u,'Primer acceso individual del profesional: '+data.reason)
     audit(db,actor,'ADMIN_DOCTOR_CREATED','doctor',d.id,data.reason,{'user_id':u.id,'enabled':d.enabled})

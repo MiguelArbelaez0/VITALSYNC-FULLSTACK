@@ -37,7 +37,7 @@ export function Protected({
   const { user, loading, error } = useAuth();
   if (loading) return <Loading />;
   if (error) return <ErrorBox error={error} />;
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/auth" replace />;
   if (user.role !== role)
     return (
       <Empty
@@ -82,6 +82,7 @@ export function App() {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
+      <Route path="/auth" element={<Auth />} />
       <Route path="/login" element={<Auth />} />
       <Route path="/register" element={<Auth register />} />
       <Route

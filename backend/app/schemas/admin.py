@@ -13,7 +13,7 @@ class DoctorInput(Reason):
     modalities:list[Modality]=Field(min_length=1,max_length=2)
     enabled:bool=True
 class DoctorCreate(DoctorInput):
-    email:EmailStr
+    email:EmailStr|None=None
 class SpecialtyInput(Reason):
     name:str=Field(min_length=3,max_length=100)
 class AccountStatus(Reason):

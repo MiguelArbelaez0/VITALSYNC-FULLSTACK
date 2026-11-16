@@ -50,8 +50,12 @@ Contrato interactivo: `/docs`. JSON completo: `/openapi.json`. Las rutas protegi
 | --- | --- | --- |
 | GET | `/api/health` | Conectividad real de PostgreSQL |
 | GET | `/api/config` | Modo demo y políticas públicas |
-| POST | `/api/auth/register` | Registrar y autenticar paciente |
+| POST | `/api/auth/register` | Registrar y autenticar paciente; el rol siempre es PATIENT |
 | POST | `/api/auth/login` | Iniciar sesión |
+
+La aplicación ofrece una sola pantalla en `/auth`; `/login` y `/register` son rutas compatibles. El login usa el perfil devuelto por la API y no deduce roles a partir del correo. Las cuentas de médicos se crean desde administración (o con el aprovisionamiento local privado); el registro público no acepta ni asigna roles profesionales o administrativos. Las cuentas demo nuevas usan `nombre.apellido@doctor.vitalsync.demo`. Los correos y contraseñas existentes no se cambian.
+
+Capturas verificadas de la pantalla unificada: [inicio de sesión](screenshots/auth-unified-desktop.png) y [registro de pacientes](screenshots/auth-unified-register-desktop.png).
 | POST | `/api/auth/logout` | Revocar sesión y borrar cookie |
 | GET / PATCH | `/api/auth/me` | Perfil propio / actualizar nombre y teléfono |
 | GET | `/api/dashboard` | Indicadores y próxima cita |

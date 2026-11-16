@@ -35,6 +35,12 @@ def test_register_duplicate_and_role_injection(client):
         u = db.scalar(select(User).where(User.email == body['email']))
         assert u.password_hash != body['password'] and passwords.verify(body['password'], u.password_hash)
 
+@pytest.mark.parametrize('email', ['persona@gmail.com', 'persona@outlook.com'])
+def test_registration_accepts_personal_email_providers(client, email):
+    response = register_patient(client, 'Paciente Correo', email, 'Password2026!')
+    assert response.status_code == 201, response.text
+    assert response.json()['role'] == 'PATIENT'
+
 @pytest.mark.parametrize('document', ['12345', '12345678901', '123 456', '123.456', '12A456', ''])
 def test_registration_rejects_invalid_document_without_echoing_it(client, document):
     body = registration_data('Paciente Prueba', 'identity-format@example.com', 'Password2026!', document)
