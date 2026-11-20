@@ -3,7 +3,7 @@
 ## Configuración de Google Cloud
 
 1. En Google Cloud / Google Auth Platform configura el nombre VITALSYNC, correo de soporte, audiencia y pantalla de consentimiento. Durante pruebas agrega las cuentas autorizadas como usuarios de prueba cuando corresponda.
-2. Crea un cliente OAuth de tipo **Aplicación web**. En orígenes JavaScript autorizados agrega `http://localhost:5188` y `http://127.0.0.1:5188`. Para un despliegue público agrega su origen HTTPS exacto.
+2. Crea un cliente OAuth de tipo **Aplicación web**. Para desarrollo, Google exige registrar ambos orígenes `http://localhost` y `http://localhost:5188`. Agrega también `http://127.0.0.1:5188` si usarás esa dirección. Para un despliegue público agrega su origen HTTPS exacto. Guarda los cambios y espera su propagación; no agregues rutas como `/login` a los orígenes.
 3. Copia el Client ID público a ambas variables de `.env`:
 
 ```dotenv
@@ -70,3 +70,36 @@ El flujo vincula paciente y médico desde sus perfiles tras confirmar contraseñ
 Con un Client ID autorizado y cuentas reales, comprobar popup, consentimiento, selección de cuenta, rechazo de permisos, usuario nuevo, coincidencia de correo sin vincular, vinculación de médico, login posterior, revocación y sesión en móvil. Validar HTTPS y cookies seguras en el dominio final. No se afirma que estos pasos reales se hayan ejecutado sin esa evidencia.
 
 LiveKit conserva los mismos endpoints, ventanas horarias, permisos por rol y ciclo de atención. El administrador no recibe acceso a la sala ni a historias clínicas.
+
+## Comprobación local del 20 de noviembre de 2026
+
+- Backend: **182 aprobadas**. Frontend: **50 aprobadas**. Compilación React de producción: aprobada; conserva el aviso de tamaño de algunos chunks.
+- E2E con proveedor Google controlado: aprobado. Vinculación de paciente y médico con contraseña, login Google según rol, rechazo del médico sin vincular, conexión LiveKit, salida/reingreso y finalización con historial.
+- Docker actualizado: `vitalsync` con `db`, `backend`, `frontend` y `livekit`. Se conserva `vitalsync_vitalsync_data`.
+- Alembic: única cabeza `20261123_google_identity`, aplicada a la base principal.
+- Conservación de datos: los contenidos completos de `users`, `patients`, `appointments` y `payments` producen los mismos hashes agregados antes/después de migrar: **61 usuarios, 55 pacientes, 63 citas y 147 pagos**. No se reemplazaron contraseñas ni registros existentes.
+- Respaldo anterior a migrar: `Desktop/VITALSYNC-RESPALDOS/vitalsync-before-google-20261120-012123.dump`, índice comprobado con `pg_restore -l`. SHA-256: `6C05B988D0DFF90A92E26358294781586B3249F4876B784AD726348A100D8593`.
+- El Client ID proporcionado por el titular se configuró en ambas variables de `.env`, que permanece ignorado por Git. El SDK oficial y el botón cargan; la prueba real detectó **“The given origin is not allowed for the given client ID”** en escritorio y móvil. La consola Google Cloud muestra únicamente `http://localhost:5188` en el formulario, y el titular confirma haberlo guardado. Se solicitó agregar también `http://localhost`, como indica la guía oficial, y esperar propagación. La autenticación real permanece pendiente de esa autorización y de la selección manual de cuenta.
+
+Para repetir únicamente la prueba del botón oficial (no autentica al usuario):
+
+```powershell
+cd frontend
+$env:E2E_GOOGLE_OFFICIAL = 'true'
+npm run test:e2e -- --grep 'Google official GIS button' --output test-results-google
+Remove-Item Env:E2E_GOOGLE_OFFICIAL
+```
+
+La política CSP permite los recursos oficiales GIS. El test admite que Google renderice el botón accesible en el documento principal o gestione internamente un iframe; no depende del contenido del iframe. Las pruebas de proveedor controlado y Google oficial usan carpetas de salida distintas cuando se ejecutan por separado.
+
+Capturas del SDK oficial cargado (no demuestran autenticación real): [escritorio](screenshots/google-login-desktop.png), [móvil](screenshots/google-login-mobile.png).
+
+## Cómo probar paciente y médico
+
+Abre `http://localhost:5188/login` y utiliza cuentas Google distintas para paciente y médico: cada identidad `sub` se puede vincular a un solo usuario VITALSYNC.
+
+1. **Paciente existente:** inicia con su correo y contraseña habituales; abre `http://localhost:5188/portal/profile`. En Acceso con Google confirma la contraseña y pulsa el botón Google. Selecciona la cuenta personal y espera la confirmación de vinculación. Cierra sesión; vuelve al login, pulsa Continuar con Google y selecciona esa misma cuenta. Debe abrir `/portal`.
+2. **Paciente nuevo:** desde el login pulsa Continuar con Google con una cuenta aún no vinculada ni coincidente con un usuario existente. Completa CC, teléfono y privacidad. Se crea únicamente una cuenta de paciente y abre `/portal`.
+3. **Médico:** inicia con su correo institucional y contraseña actuales; abre `http://localhost:5188/doctor/profile`. Confirma la contraseña en Acceso con Google y selecciona una cuenta Google real que no esté vinculada a otro usuario. Al confirmar, cierra sesión y entra desde el login con esa misma cuenta Google. Debe abrir `/doctor` conservando especialidad, citas y permisos.
+
+Si el correo Google coincide con una cuenta existente, hay que vincular desde la sesión con contraseña; el sistema no fusiona por correo. Una cuenta Google sin vincular jamás adquiere el rol médico. El administrador conserva su inicio con contraseña.
