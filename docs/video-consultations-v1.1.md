@@ -8,7 +8,7 @@ La videollamada solo se habilita si el entorno tiene LiveKit configurado. Si Liv
 
 ## Arquitectura
 
-- React carga los componentes oficiales `PreJoin`, `LiveKitRoom` y `VideoConference` bajo demanda, desde los portales de paciente y médico.
+- React carga `PreJoin`, `LiveKitRoom`, los hooks oficiales de tracks/participantes y componentes LiveKit de video/audio bajo demanda desde los portales de paciente y médico. La sala VitalSync renderiza el video remoto como escenario principal y el propio como vista flotante, con controles institucionales adaptables.
 - FastAPI emite tokens cortos después de verificar sesión, rol, cita virtual, titularidad, asignación y ventana horaria.
 - PostgreSQL conserva el nombre estable de la sala por cita, estado de conexión, auditoría e historial de eventos administrativos. Nunca almacena audio, video ni transcripciones.
 - El servidor LiveKit se incorpora al Compose existente `vitalsync` bajo el perfil `video`; el volumen de PostgreSQL no cambia.
@@ -63,13 +63,15 @@ En **Mis citas** aparece **Prueba una videollamada ahora** únicamente para un p
 
 La cita virtual conserva su ciclo de negocio actual. El estado técnico LiveKit se muestra aparte como `WAITING`, `CONNECTED`, `RECONNECTING` o `DISCONNECTED`. Cada sala tiene un nombre aleatorio estable creado al confirmar la cita; recargar o solicitar otro token no genera una sala nueva.
 
-Cuando ambos participantes se conectan, la cita pasa a `IN_PROGRESS` y se registran el historial y auditoría. Una pérdida de conexión actualiza solo el estado técnico y permite reconectar; cerrar la pestaña no finaliza la consulta. El médico confirma **Finalizar consulta**. La operación actualiza PostgreSQL, notifica al paciente, invalida nuevos tokens, cierra la sala en segundo plano y mueve la cita a `ATTENDED` en Próximas/Historial. La repetición de la finalización no crea eventos duplicados.
+Cuando ambos participantes se conectan, la cita pasa a `IN_PROGRESS` y se registran el historial y auditoría. Una pérdida de conexión actualiza solo el estado técnico y permite reconectar; cerrar la pestaña no finaliza la consulta. **Salir de la llamada** detiene cámara/micrófono locales, desconecta al participante y devuelve al portal; no marca finalización, y el participante restante ve el aviso de espera/reconexión. **Finalizar consulta** solo aparece para el médico asignado si la cita está `IN_PROGRESS` y la teleconsulta `EN_ATENCION`. El médico confirma en un diálogo; la operación actualiza PostgreSQL, notifica al paciente, invalida nuevos tokens y solicita el cierre de LiveKit. Un error temporal al cerrar el proveedor se reintenta tres veces; una repetición idempotente del endpoint vuelve a intentar el cierre sin duplicar auditoría o transiciones.
+
+Ambos participantes reciben la pantalla **Consulta finalizada** consultando el registro persistido: estado, fecha, hora y duración se basan en `started_at` / `finalized_at` de la sesión. Los historiales del paciente y médico muestran el estado `ATTENDED` (presentado como Finalizada); el administrador ve `status_label=FINALIZADA` y los metadatos de inicio/finalización/duración, sin contenido clínico. Los webhooks LiveKit tardíos se registran por `event_id`, pero ya no pueden alterar el estado terminal ni agregar transiciones posteriores.
 
 La interfaz de administración muestra si el proveedor está configurado y el estado de conexión; no expone nombre de sala, token ni medios.
 
 ## Dispositivos y errores
 
-`PreJoin` ofrece vista previa y selección de dispositivos. Los componentes LiveKit controlan cámara, micrófono, selección de dispositivos y salida temporal. Permisos denegados, falta de dispositivos, servidor no disponible o red interrumpida se muestran como errores de conexión; se puede volver a preparación y solicitar un token nuevo mientras la cita siga dentro de su ventana.
+`PreJoin` ofrece vista previa y permisos de dispositivos. En la sala, los controles cambian cámara y micrófono; el menú oficial LiveKit permite seleccionar entrada de audio, cámara y salida de audio. Compartir pantalla permanece deshabilitado porque los tokens del backend solo permiten publicar cámara y micrófono. Permisos denegados, falta de dispositivos, servidor no disponible o red interrumpida se muestran con mensajes entendibles; se puede volver a preparación y solicitar un token nuevo mientras la cita siga activa y dentro de su ventana.
 
 Los tokens duran como máximo 15 minutos. Si expiran antes del ingreso, se solicita otro mediante la misma comprobación de permisos. Una consulta finalizada o cancelada nunca vuelve a emitirlos.
 
@@ -97,7 +99,7 @@ Para una comprobación audiovisual local entre dos contextos Chromium con entrad
 
 La variante `.\infrastructure\test-livekit.ps1 -UsePhysicalDevices` usa los dispositivos físicos conectados. Apaga screenshots y trazas para no guardar imágenes o contenido de la cámara. Ambos modos levantan una base aislada y transmiten medios solo a LiveKit local; no se graban.
 
-El script crea otra base temporal aislada, emite credenciales de fixture a una carpeta local protegida, inicia el servicio LiveKit de prueba en el mismo proyecto y ejecuta el E2E de medios. El modo sintético y el modo con dispositivos físicos verifican video y pistas de audio activas en ambos navegadores, reconexión y finalización. La prueba física usa los medios localmente y no guarda capturas, trazas ni grabaciones. No mide calidad audible ni equivale a una llamada entre redes distintas.
+El script crea otra base temporal aislada, emite credenciales de fixture a una carpeta local protegida, inicia el servicio LiveKit de prueba en el mismo proyecto y ejecuta el E2E de medios. El modo sintético verifica video y pistas de audio activas en ambos navegadores, desconexión voluntaria sin cambiar `IN_PROGRESS`, reingreso, reconexión y finalización confirmada por paciente, médico y administrador. También guarda capturas de la sala y pantalla final en escritorio y móvil. La prueba física usa los medios localmente y no guarda capturas, trazas ni grabaciones. No mide calidad audible ni equivale a una llamada entre redes distintas.
 
 ## Capturas
 
@@ -105,7 +107,13 @@ El E2E local completó la preparación, conexión de dos participantes, publicac
 
 ![Preparación de cámara y micrófono antes de ingresar](screenshots/livekit-prejoin-desktop.png)
 
-![Sala LiveKit local con video bidireccional](screenshots/livekit-room-desktop.png)
+![Sala LiveKit VitalSync en escritorio](screenshots/livekit-room-desktop.png)
+
+![Sala LiveKit VitalSync en móvil](screenshots/livekit-room-mobile.png)
+
+![Consulta finalizada en escritorio](screenshots/livekit-finished-desktop.png)
+
+![Consulta finalizada en móvil](screenshots/livekit-finished-mobile.png)
 
 ## Diferentes redes y limitaciones
 

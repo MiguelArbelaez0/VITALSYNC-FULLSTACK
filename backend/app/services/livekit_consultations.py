@@ -148,6 +148,13 @@ def process_webhook(db: Session, raw_body: bytes, auth_header: str | None):
     if inserted.rowcount == 0:
         return {'accepted': True, 'processed': False, 'duplicate': True}
 
+    # Webhooks can arrive late after the doctor has finalized the encounter.
+    # Keep the event for idempotency/audit, but never let it reopen or regress
+    # the consultation state or append a post-finalization lifecycle transition.
+    if appointment.status in TERMINAL_APPOINTMENTS or vc.status in {'FINALIZADA', 'CANCELADA', 'PACIENTE_AUSENTE', 'MEDICO_AUSENTE'}:
+        db.flush()
+        return {'accepted': True, 'processed': True, 'terminal': True, 'connection_state': 'DISCONNECTED'}
+
     timestamp = now()
     connected = event_type == 'participant_joined'
     if role == 'PATIENT':
@@ -167,7 +174,8 @@ def process_webhook(db: Session, raw_body: bytes, auth_header: str | None):
         vc.status = 'SALA_DISPONIBLE'
         vc.room_opened_at = vc.room_opened_at or timestamp
     if connected and not (vc.livekit_patient_connected and vc.livekit_doctor_connected):
-        vc.status = 'EN_ESPERA'
+        if appointment.status == 'CONFIRMED':
+            vc.status = 'EN_ESPERA'
     if appointment.status not in TERMINAL_APPOINTMENTS and vc.livekit_patient_connected and vc.livekit_doctor_connected:
         vc.livekit_connection_state = 'CONNECTED'
         if appointment.status == 'CONFIRMED':
@@ -176,6 +184,10 @@ def process_webhook(db: Session, raw_body: bytes, auth_header: str | None):
             vc.started_at = vc.started_at or timestamp
             db.add(StatusHistory(appointment_id=appointment.id, status='IN_PROGRESS', author_id=user_id,
                                  reason='LiveKit: paciente y médico conectados a la consulta virtual.'))
+        elif appointment.status == 'IN_PROGRESS':
+            # Restoring both media connections resumes the same encounter;
+            # it must not regress the persisted consultation phase.
+            vc.status = 'EN_ATENCION'
     elif connected:
         vc.livekit_connection_state = 'WAITING'
     else:
@@ -196,7 +208,9 @@ def finalize(db: Session, appointment_id: int, user, doctor_id: int):
     if role != 'DOCTOR':
         raise HTTPException(403, 'Solo el médico asignado puede finalizar la consulta')
     if appointment.status == 'ATTENDED' and vc.status == 'FINALIZADA':
-        return {'appointment_id': appointment.id, 'status': 'FINALIZADA', 'appointment_status': 'ATTENDED', 'idempotent': True, 'room_name': vc.livekit_room_name}
+        return {'appointment_id': appointment.id, 'status': 'FINALIZADA', 'appointment_status': 'ATTENDED',
+                'idempotent': True, 'room_name': vc.livekit_room_name, 'started_at': vc.started_at,
+                'finalized_at': vc.finalized_at}
     if appointment.status != 'IN_PROGRESS' or vc.status != 'EN_ATENCION':
         raise HTTPException(409, 'La consulta solo se puede finalizar después de que ambos participantes se conecten')
 
@@ -221,20 +235,28 @@ def finalize(db: Session, appointment_id: int, user, doctor_id: int):
     db.add(Notification(patient_id=appointment.patient_id,
                         message=f'La consulta virtual de la cita {appointment.code} fue finalizada por el médico y quedó en tu historial.'))
     db.flush()
-    return {'appointment_id': appointment.id, 'status': 'FINALIZADA', 'appointment_status': 'ATTENDED', 'idempotent': False, 'room_name': vc.livekit_room_name}
+    return {'appointment_id': appointment.id, 'status': 'FINALIZADA', 'appointment_status': 'ATTENDED',
+            'idempotent': False, 'room_name': vc.livekit_room_name, 'started_at': vc.started_at,
+            'finalized_at': vc.finalized_at}
 
 
 def close_room(room_name: str):
-    """Close the already-finalized LiveKit room after the database commit."""
+    """Close the finalized room after commit, retrying transient LiveKit errors."""
     async def _close():
-        client = api.LiveKitAPI(LIVEKIT_API_URL, api_key=LIVEKIT_API_KEY, api_secret=LIVEKIT_API_SECRET)
-        try:
-            await client.room.delete_room(api.DeleteRoomRequest(room=room_name))
-        finally:
-            await client.aclose()
-    try:
-        asyncio.run(_close())
-    except Exception:
-        # Database finalization remains authoritative; the room rejects new tokens regardless.
+        for attempt in range(3):
+            client = api.LiveKitAPI(LIVEKIT_API_URL, api_key=LIVEKIT_API_KEY, api_secret=LIVEKIT_API_SECRET)
+            try:
+                await client.room.delete_room(api.DeleteRoomRequest(room=room_name))
+                return True
+            except Exception:
+                if attempt == 2:
+                    return False
+                await asyncio.sleep(0.2 * (attempt + 1))
+            finally:
+                await client.aclose()
         return False
-    return True
+    try:
+        return asyncio.run(_close())
+    except Exception:
+        # PostgreSQL finalization remains authoritative and blocks future tokens.
+        return False

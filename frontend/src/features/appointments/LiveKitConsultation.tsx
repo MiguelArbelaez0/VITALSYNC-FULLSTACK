@@ -1,11 +1,23 @@
-import { useState, type ComponentProps } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import {
   LiveKitRoom,
+  MediaDeviceSelect,
   PreJoin,
-  VideoConference,
+  RoomAudioRenderer,
+  type TrackReference,
+  VideoTrack,
+  useLocalParticipant,
+  useParticipants,
+  useRoomContext,
+  useTracks,
 } from "@livekit/components-react";
+import { Track } from "livekit-client";
+import {
+  Camera, CameraOff, Check, Clock3, Headphones, Mic, MicOff,
+  Phone, PhoneOff, Settings2, Video,
+} from "lucide-react";
 import { api, post, dateText, timeText } from "../../services/api";
 import type { Appointment } from "../../types";
 import { Button } from "../../components/ui/button";
@@ -16,14 +28,30 @@ import "./livekit-consultation.css";
 
 type UserChoices = Parameters<NonNullable<ComponentProps<typeof PreJoin>["onSubmit"]>>[0];
 type TokenResponse = { token: string; server_url: string; expires_in_seconds: number };
+type FinalizeResponse = { status: string; appointment_status: string; finalized_at?: string; started_at?: string; idempotent: boolean };
 
-export function LiveKitConsultation({
-  appointmentId,
-  role,
-}: {
-  appointmentId: string;
-  role: "PATIENT" | "DOCTOR";
-}) {
+const portalPath = (role: "PATIENT" | "DOCTOR") => role === "PATIENT" ? "/portal/appointments" : "/doctor/appointments";
+
+function displayError(error: unknown) {
+  if (!(error instanceof Error)) return "Ocurrió un problema con la videollamada. Intenta de nuevo.";
+  const message = error.message.toLowerCase();
+  if (message.includes("permission") || message.includes("notallowed") || message.includes("permiso")) return "El navegador no permitió usar cámara o micrófono. Revisa los permisos del sitio.";
+  if (message.includes("device") || message.includes("notfound") || message.includes("not found")) return "No encontramos el dispositivo seleccionado. Conecta o elige otro dispositivo.";
+  if (message.includes("409") || message.includes("terminó") || message.includes("finaliz")) return "Esta consulta ya no admite nuevos ingresos.";
+  if (message.includes("404") || message.includes("no pertenece")) return "No tienes acceso a esta sala.";
+  return "No se pudo completar la acción. Comprueba tu conexión e inténtalo nuevamente.";
+}
+
+function durationLabel(startedAt?: string | null, endedAt?: string | null, now = Date.now()) {
+  if (!startedAt) return "Pendiente";
+  const start = new Date(startedAt).getTime();
+  const end = endedAt ? new Date(endedAt).getTime() : now;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return "No disponible";
+  const minutes = Math.floor((end - start) / 60000);
+  return `${minutes} min`;
+}
+
+export function LiveKitConsultation({ appointmentId, role }: { appointmentId: string; role: "PATIENT" | "DOCTOR" }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [credentials, setCredentials] = useState<TokenResponse | null>(null);
@@ -33,24 +61,29 @@ export function LiveKitConsultation({
   const [error, setError] = useState<unknown>(null);
   const [finalizeOpen, setFinalizeOpen] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
-  const prefix = role === "PATIENT" ? "/appointments/" : "/doctor/appointments/";
-  const roomPath = role === "PATIENT"
-    ? `${prefix}${appointmentId}/teleconsult`
-    : `${prefix}${appointmentId}/teleconsult`;
-  const tokenPath = role === "PATIENT"
-    ? `${prefix}${appointmentId}/livekit-token`
-    : `${prefix}${appointmentId}/livekit-token`;
+  const [clock, setClock] = useState(Date.now());
+  const exitRequested = useRef(false);
+  const roomPath = `/appointments/${appointmentId}/teleconsult`;
+  const tokenPath = `/appointments/${appointmentId}/livekit-token`;
+  const queryKey = [role === "PATIENT" ? "teleconsult" : "doctor", "livekit", appointmentId];
   const q = useQuery({
-    queryKey: [role === "PATIENT" ? "teleconsult" : "doctor", "livekit", appointmentId],
-    queryFn: () => api<Appointment>(roomPath),
-    refetchInterval: credentials ? 5000 : 15000,
+    queryKey,
+    queryFn: () => api<Appointment>(role === "PATIENT" ? roomPath : `/doctor${roomPath}`),
+    refetchInterval: credentials ? 3000 : 10000,
   });
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   async function joinRoom(selected: UserChoices) {
     setBusy(true);
     setError(null);
     try {
-      const issued = await post<TokenResponse>(tokenPath, {});
+      const path = role === "PATIENT" ? tokenPath : `/doctor${tokenPath}`;
+      const issued = await post<TokenResponse>(path, {});
+      exitRequested.current = false;
       setChoices(selected);
       setCredentials(issued);
     } catch (cause) {
@@ -61,13 +94,32 @@ export function LiveKitConsultation({
   }
 
   async function finishConsultation() {
+    if (finalizing) return;
     setFinalizing(true);
     setError(null);
     try {
-      await post(`/doctor/appointments/${appointmentId}/livekit-finalize`, {});
-      await queryClient.invalidateQueries();
+      const result = await post<FinalizeResponse>(`/doctor/appointments/${appointmentId}/livekit-finalize`, {});
+      const current = queryClient.getQueryData<Appointment>(queryKey);
+      const finalTimestamp = result.finalized_at ?? current?.virtual_state?.finalized_at ?? null;
+      const startTimestamp = result.started_at ?? current?.virtual_state?.started_at ?? null;
+      if (current) queryClient.setQueryData<Appointment>(queryKey, {
+        ...current,
+        status: "ATTENDED",
+        attended_at: finalTimestamp,
+        virtual_status: "FINALIZADA",
+        livekit_connection_state: "DISCONNECTED",
+        virtual_state: current.virtual_state ? {
+          ...current.virtual_state,
+          status: "FINALIZADA",
+          lifecycle_status: "FINALIZADA",
+          finalized_at: finalTimestamp,
+          started_at: startTimestamp,
+        } : current.virtual_state,
+      });
       setFinalizeOpen(false);
-      navigate("/doctor/appointments");
+      setCredentials(null);
+      setChoices(null);
+      await queryClient.invalidateQueries();
     } catch (cause) {
       setError(cause);
     } finally {
@@ -76,97 +128,219 @@ export function LiveKitConsultation({
   }
 
   if (q.isPending) return <Loading />;
-  if (q.error) return <ErrorBox error={q.error} />;
+  if (q.error) return <ErrorBox error={displayError(q.error)} />;
   const appointment = q.data;
-  const terminal = ["ATTENDED", "CANCELLED", "PATIENT_ABSENT", "DOCTOR_ABSENT"].includes(appointment.status);
-  const title = role === "PATIENT" ? "Videollamada con tu médico" : "Videollamada con el paciente";
-  const canFinish = role === "DOCTOR" && appointment.status === "IN_PROGRESS" && appointment.virtual_status !== "FINALIZADA";
+  const terminal = appointment.status === "ATTENDED" || appointment.virtual_status === "FINALIZADA";
+  const canceled = ["CANCELLED", "PATIENT_ABSENT", "DOCTOR_ABSENT"].includes(appointment.status);
+  const title = "Videoconsulta";
+  const canFinish = role === "DOCTOR" && appointment.status === "IN_PROGRESS" && appointment.virtual_status === "EN_ATENCION";
+  const startedAt = appointment.virtual_state?.started_at;
+  const finalizedAt = appointment.virtual_state?.finalized_at ?? appointment.attended_at;
+  const backPath = role === "PATIENT" ? `/portal/appointments/${appointmentId}` : `/doctor/appointments/${appointmentId}`;
 
   return (
     <main className="livekit-page">
-      <Link className="text-link back-link" to={role === "PATIENT" ? `/portal/appointments/${appointmentId}` : `/doctor/appointments/${appointmentId}`}>
-        ← Volver al detalle de la cita
-      </Link>
+      <div className="livekit-breadcrumb">
+        <Link className="text-link" to={backPath}>← Volver al detalle de la cita</Link>
+        <span className={`livekit-status-pill ${terminal ? "is-finished" : canceled ? "is-muted" : connected ? "is-connected" : ""}`}>
+          <span aria-hidden="true" />{terminal ? "Finalizada" : canceled ? "No disponible" : connected ? "En curso" : appointment.livekit_connection_state === "RECONNECTING" ? "Reconectando" : "Sala virtual"}
+        </span>
+      </div>
       <PageTitle
-        eyebrow="SALA PRIVADA DE CITA VIRTUAL"
+        eyebrow="SALA PRIVADA · VITALSYNC"
         title={title}
-        description={`${appointment.patient ?? "Paciente"} · ${appointment.doctor} · ${dateText(appointment.starts_at)} · ${timeText(appointment.starts_at)} · Bogotá`}
+        description={`${appointment.patient ?? "Paciente"} · ${appointment.doctor} · ${appointment.specialty} · ${dateText(appointment.starts_at)} · ${timeText(appointment.starts_at)} · Bogotá`}
       />
-      <section className="panel livekit-panel">
-        {terminal ? (
-          <div className="notice" role="status">
-            {appointment.status === "ATTENDED"
-              ? "La consulta ya finalizó. Puedes revisar el detalle en el historial de la cita."
-              : "Esta cita no admite ingreso a la sala de videollamada."}
+
+      {terminal ? (
+        <section className="livekit-finished-card" role="status" aria-live="polite">
+          <span className="livekit-finished-mark"><Check size={38} strokeWidth={2.5} /></span>
+          <p className="eyebrow">VITALSYNC · VIDEOCONSULTA</p>
+          <h2>Consulta finalizada</h2>
+          <p className="livekit-finished-copy">La consulta médica terminó correctamente. El registro ya está disponible en el historial.</p>
+          <div className="livekit-summary-grid">
+            <div><span>Estado</span><strong>FINALIZADA</strong></div>
+            <div><span>Fecha de atención</span><strong>{startedAt ? dateText(startedAt) : dateText(appointment.starts_at)}</strong></div>
+            <div><span>Hora de finalización</span><strong>{finalizedAt ? timeText(finalizedAt) : "No registrada"}</strong></div>
+            <div><span>Duración</span><strong>{durationLabel(startedAt, finalizedAt, clock)}</strong></div>
+            <div><span>Profesional</span><strong>{appointment.doctor}</strong></div>
+            <div><span>Especialidad</span><strong>{appointment.specialty}</strong></div>
           </div>
-        ) : credentials && choices ? (
-          <>
-            <p className="livekit-status" role="status">
-              {appointment.livekit_connection_state === "CONNECTED"
-                ? "Paciente y médico conectados"
-                : connected ? "Esperando al otro participante" : "Conectando con la sala…"}
-              {appointment.livekit_connection_state === "RECONNECTING" && " · Un participante está reconectando"}
-            </p>
-            <LiveKitRoom
-              token={credentials.token}
-              serverUrl={credentials.server_url}
-              connect
-              audio={choices.audioEnabled}
-              video={choices.videoEnabled}
-              options={{ adaptiveStream: true, dynacast: true }}
-              onConnected={() => setConnected(true)}
-              onDisconnected={() => {
-                setConnected(false);
-                setCredentials(null);
-                setChoices(null);
-                void queryClient.invalidateQueries();
-              }}
-              onError={(cause) => setError(cause)}
-              data-lk-theme="default"
-              className="livekit-room"
-            >
-              <VideoConference />
-            </LiveKitRoom>
-            <ErrorBox error={error} />
-            {canFinish && (
-              <div className="livekit-finish-row">
-                <p>Al finalizar, la cita pasará al historial de ambos portales y la sala cerrará.</p>
-                <Button onClick={() => setFinalizeOpen(true)}>Finalizar consulta</Button>
-              </div>
-            )}
-          </>
-        ) : (
-          <>
-            <div className="notice livekit-preparation-note">
-              Esta videollamada usa audio y video en tiempo real. Comprueba los permisos y dispositivos antes de ingresar. No se graba audio ni video.
-            </div>
-            <PreJoin
-              defaults={{ username: role === "PATIENT" ? "Paciente" : "Médico" }}
-              onSubmit={(selected) => void joinRoom(selected)}
-              onError={(cause) => setError(cause)}
-              userLabel={role === "PATIENT" ? "Paciente" : "Médico"}
-              joinLabel={busy ? "Solicitando acceso…" : role === "PATIENT" ? "Ingresar a videollamada" : "Iniciar videollamada"}
-              persistUserChoices
-            />
-            <ErrorBox error={error} />
-            {appointment.livekit_connection_state === "RECONNECTING" && (
-              <p className="livekit-retry-note" role="status">Se detectó una desconexión temporal. Comprueba tu conexión y vuelve a ingresar.</p>
-            )}
-          </>
-        )}
-      </section>
+          <Link className="livekit-primary-link" to={portalPath(role)}>{role === "PATIENT" ? "Ver historial de citas" : "Volver a mis consultas"}</Link>
+        </section>
+      ) : canceled ? (
+        <section className="livekit-finished-card" role="status">
+          <span className="livekit-finished-mark is-neutral"><PhoneOff size={34} /></span>
+          <h2>Esta consulta no está disponible</h2>
+          <p className="livekit-finished-copy">La cita está cancelada o cerrada por el flujo de asistencia y no admite ingreso a la sala.</p>
+          <Link className="livekit-primary-link" to={portalPath(role)}>{role === "PATIENT" ? "Volver a mis citas" : "Volver a mis consultas"}</Link>
+        </section>
+      ) : (
+        <section className="livekit-workspace">
+          <div className="livekit-stage-column">
+            <section className="livekit-video-stage" aria-label="Sala de videoconsulta">
+              {credentials && choices ? (
+                <LiveKitRoom
+                  token={credentials.token}
+                  serverUrl={credentials.server_url}
+                  connect
+                  audio={choices.audioEnabled}
+                  video={choices.videoEnabled}
+                  options={{ adaptiveStream: true, dynacast: true }}
+                  onConnected={() => setConnected(true)}
+                  onDisconnected={() => {
+                    setConnected(false);
+                    setCredentials(null);
+                    setChoices(null);
+                    void queryClient.invalidateQueries({ queryKey });
+                    if (exitRequested.current) navigate(portalPath(role));
+                  }}
+                  onError={(cause) => setError(cause)}
+                  data-lk-theme="default"
+                  className="livekit-room"
+                >
+                  <RoomSurface
+                    remoteLabel={role === "PATIENT" ? appointment.doctor : appointment.patient ?? "Paciente"}
+                    localLabel={role === "PATIENT" ? "Tú · Paciente" : "Tú · Médico"}
+                    consultationInProgress={appointment.status === "IN_PROGRESS"}
+                    onExit={() => { exitRequested.current = true; }}
+                    onError={setError}
+                    onFinish={canFinish ? () => setFinalizeOpen(true) : undefined}
+                    finishing={finalizing}
+                    elapsed={durationLabel(startedAt, null, clock)}
+                  />
+                </LiveKitRoom>
+              ) : (
+                <div className="livekit-prejoin-shell">
+                  <div className="livekit-prejoin-heading"><span className="livekit-prejoin-icon"><Video size={24} /></span><div><h2>Antes de ingresar</h2><p>Comprueba cámara, micrófono y conexión.</p></div></div>
+                  <p className="livekit-privacy-note">Videollamada privada en tiempo real. No se graba audio, video ni transcripciones.</p>
+                  <PreJoin
+                    defaults={{ username: role === "PATIENT" ? "Paciente" : "Médico" }}
+                    onSubmit={(selected) => void joinRoom(selected)}
+                    onError={(cause) => setError(cause)}
+                    userLabel={role === "PATIENT" ? "Paciente" : "Médico"}
+                    joinLabel={busy ? "Solicitando acceso…" : role === "PATIENT" ? "Ingresar a videollamada" : "Iniciar videollamada"}
+                    persistUserChoices
+                  />
+                  <ErrorBox error={error ? displayError(error) : null} />
+                  {appointment.livekit_connection_state === "RECONNECTING" && <p className="livekit-retry-note" role="status">El otro participante se desconectó temporalmente. Puedes ingresar de nuevo cuando estés listo.</p>}
+                </div>
+              )}
+            </section>
+            <ErrorBox error={error ? displayError(error) : null} />
+            {credentials && <p className="livekit-security-note"><span /> Conexión segura · La desconexión no finaliza la cita</p>}
+          </div>
+
+          <aside className="livekit-info-card" aria-label="Información de la videoconsulta">
+            <h2>Detalles de la consulta</h2>
+            <InfoRow label="Paciente" value={appointment.patient ?? "Paciente"} />
+            <InfoRow label="Médico" value={appointment.doctor} />
+            <InfoRow label="Especialidad" value={appointment.specialty} />
+            <InfoRow label="Modalidad" value="Virtual · LiveKit" />
+            <div className="livekit-info-state"><span>Estado de conexión</span><strong className={connected ? "connected" : ""}><span />{connectionLabel(appointment.livekit_connection_state, connected)}</strong></div>
+            <div className="livekit-duration"><Clock3 size={19} /><span>Duración</span><strong>{durationLabel(startedAt, null, clock)}</strong></div>
+            <p className="livekit-leave-help">Puedes salir de la llamada sin finalizar la consulta. Si la cita continúa activa, podrás volver a entrar.</p>
+          </aside>
+        </section>
+      )}
+
       <Dialog
         open={finalizeOpen}
         onOpenChange={(open) => !finalizing && setFinalizeOpen(open)}
         title="Finalizar consulta"
-        description="Esta acción cerrará la sala y moverá la cita a Finalizadas para el paciente y el médico. La plataforma no guarda la grabación."
+        description={`La sala se cerrará para ti y ${appointment.patient ?? "el paciente"}. Esta acción guardará la consulta como finalizada para ambos portales y no se podrá volver a ingresar. No se guarda ninguna grabación.`}
       >
+        <div className="livekit-confirm-details"><strong>{appointment.patient ?? "Paciente"}</strong><span>{appointment.doctor} · {appointment.specialty}</span><span>Tiempo transcurrido: {durationLabel(startedAt, null, clock)}</span></div>
         <div className="button-row">
           <Button type="button" variant="outline" disabled={finalizing} onClick={() => setFinalizeOpen(false)}>Continuar consulta</Button>
-          <Button disabled={finalizing} onClick={() => void finishConsultation()}>{finalizing ? "Finalizando…" : "Confirmar finalización"}</Button>
+          <Button disabled={finalizing || !connected} onClick={() => void finishConsultation()}>{finalizing ? "Guardando finalización…" : "Confirmar y finalizar"}</Button>
         </div>
-        <ErrorBox error={error} />
+        <ErrorBox error={error ? displayError(error) : null} />
       </Dialog>
     </main>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return <div className="livekit-info-row"><span>{label}</span><strong>{value}</strong></div>;
+}
+
+function connectionLabel(serverState: Appointment["livekit_connection_state"], connected: boolean) {
+  if (connected) return "Conectado";
+  if (serverState === "CONNECTED") return "Participante conectado";
+  if (serverState === "RECONNECTING") return "Participante reconectando";
+  if (serverState === "WAITING") return "Esperando al otro participante";
+  return "Esperando ingreso";
+}
+
+function RoomSurface({
+  remoteLabel, localLabel, onExit, onError, onFinish, finishing, elapsed,
+  consultationInProgress,
+}: {
+  remoteLabel: string; localLabel: string; onExit: () => void; onError: (error: unknown) => void;
+  onFinish?: () => void; finishing: boolean; elapsed: string; consultationInProgress: boolean;
+}) {
+  const room = useRoomContext();
+  const { localParticipant, isMicrophoneEnabled, isCameraEnabled } = useLocalParticipant();
+  const participants = useParticipants();
+  const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
+  const remoteTrack = useMemo(() => tracks.find((track) => !track.participant.isLocal), [tracks]);
+  const localTrack = useMemo(() => tracks.find((track) => track.participant.isLocal), [tracks]);
+  const [deviceMenu, setDeviceMenu] = useState(false);
+  const [operation, setOperation] = useState("");
+  const remoteConnected = participants.some((participant) => !participant.isLocal);
+
+  async function toggle(kind: "microphone" | "camera") {
+    setOperation(kind);
+    try {
+      if (kind === "microphone") await localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled);
+      else await localParticipant.setCameraEnabled(!isCameraEnabled);
+    } catch (cause) { onError(cause); }
+    finally { setOperation(""); }
+  }
+
+  async function leave() {
+    onExit();
+    try { await room.localParticipant.setMicrophoneEnabled(false); } catch { /* best-effort media shutdown before leaving */ }
+    try { await room.localParticipant.setCameraEnabled(false); } catch { /* best-effort media shutdown before leaving */ }
+    await room.disconnect();
+  }
+
+  return (
+    <div className="livekit-live-surface">
+      <div className="livekit-live-heading"><div><span className="livekit-live-dot" /><div><strong>Consulta en curso</strong><small>{elapsed} transcurridos</small></div></div><span className="livekit-encrypted">Sala privada</span></div>
+      {consultationInProgress && !remoteConnected && <div className="livekit-peer-notice" role="status"><strong>El otro participante salió o perdió la conexión.</strong><span>La consulta sigue activa; podrá volver a ingresar mientras la cita esté autorizada.</span></div>}
+      <div className="livekit-video-grid">
+        <div className="livekit-main-video">
+          {remoteTrack && "publication" in remoteTrack && remoteTrack.publication ? <VideoTrack trackRef={remoteTrack as TrackReference} /> : <div className="livekit-video-placeholder"><span>{remoteLabel.slice(0, 1).toUpperCase()}</span><strong>{remoteLabel}</strong><small>{remoteTrack ? "Cámara desactivada" : "Esperando al otro participante…"}</small></div>}
+          <div className="livekit-video-name"><span className="livekit-live-dot" />{remoteLabel}</div>
+          <RoomAudioRenderer />
+        </div>
+        <div className={`livekit-self-video ${!isCameraEnabled ? "is-off" : ""}`}>
+          {localTrack && isCameraEnabled && "publication" in localTrack && localTrack.publication ? <VideoTrack trackRef={localTrack as TrackReference} /> : <div className="livekit-self-placeholder"><CameraOff size={24} /><span>Cámara apagada</span></div>}
+          <span className="livekit-self-label">{localLabel}</span>
+        </div>
+      </div>
+      <div className="livekit-controls" aria-label="Controles de llamada">
+        <button type="button" className={`livekit-control ${!isMicrophoneEnabled ? "is-muted" : ""}`} onClick={() => void toggle("microphone")} disabled={operation === "microphone"} aria-pressed={isMicrophoneEnabled}>
+          {isMicrophoneEnabled ? <Mic /> : <MicOff />}<span>{isMicrophoneEnabled ? "Silenciar" : "Activar micrófono"}</span>
+        </button>
+        <button type="button" className={`livekit-control ${!isCameraEnabled ? "is-muted" : ""}`} onClick={() => void toggle("camera")} disabled={operation === "camera"} aria-pressed={isCameraEnabled}>
+          {isCameraEnabled ? <Camera /> : <CameraOff />}<span>{isCameraEnabled ? "Apagar cámara" : "Activar cámara"}</span>
+        </button>
+        <div className="livekit-device-control">
+          <button type="button" className={`livekit-control ${deviceMenu ? "is-selected" : ""}`} onClick={() => setDeviceMenu((shown) => !shown)} aria-expanded={deviceMenu}>
+            <Settings2 /><span>Dispositivos</span>
+          </button>
+          {deviceMenu && <div className="livekit-device-menu"><h3>Micrófono</h3><MediaDeviceSelect kind="audioinput" onError={onError} /><h3>Cámara</h3><MediaDeviceSelect kind="videoinput" onError={onError} /><h3>Salida de audio</h3><MediaDeviceSelect kind="audiooutput" onError={onError} /><p>Compartir pantalla no está habilitado para esta sala.</p></div>}
+        </div>
+        <span className="livekit-control-spacer" />
+        <button type="button" className="livekit-control livekit-leave-control" onClick={() => void leave()}><PhoneOff /><span>Salir de la llamada</span></button>
+        {onFinish && <button type="button" className="livekit-control livekit-finish-control" onClick={onFinish} disabled={finishing}>
+          <Phone /><span>{finishing ? "Finalizando…" : "Finalizar consulta"}</span>
+        </button>}
+      </div>
+      <div className="livekit-connected-footer"><Headphones size={16} /><span>Audio y video en tiempo real · No se graba</span><span className="livekit-connected-label"><span />Conectado</span></div>
+    </div>
   );
 }

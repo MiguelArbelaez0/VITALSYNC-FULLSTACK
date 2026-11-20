@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from app.core.security import passwords
 from app.db.session import SessionLocal
 from app.main import app
-from app.models.entities import Appointment, DoctorAccount, DoctorCredentialState, LiveKitRoomEvent, User, VirtualConsultation, now
+from app.models.entities import Appointment, DoctorAccount, DoctorCredentialState, LiveKitRoomEvent, StatusHistory, User, VirtualConsultation, now
 from app.seed import seed
 from app.services import livekit_consultations as livekit
 from conftest import activate, register_patient
@@ -106,9 +106,9 @@ def test_livekit_webhooks_track_participants_and_doctor_finalization_is_idempote
         def receive(self, _body, _authorization): return event
     monkeypatch.setattr(livekit.api, 'WebhookReceiver', Receiver)
 
-    def deliver(event_id, identity):
+    def deliver(event_id, identity, event_type='participant_joined'):
         event.id = event_id
-        event.event = 'participant_joined'
+        event.event = event_type
         event.room = SimpleNamespace(name=room_name)
         event.participant = SimpleNamespace(identity=identity)
         with SessionLocal.begin() as db:
@@ -117,12 +117,15 @@ def test_livekit_webhooks_track_participants_and_doctor_finalization_is_idempote
     assert deliver('event-patient-joined', f'user:{patient_id}')['connection_state'] == 'WAITING'
     assert deliver('event-doctor-joined', f'user:{doctor_user_id}')['connection_state'] == 'CONNECTED'
     assert deliver('event-doctor-joined', f'user:{doctor_user_id}')['duplicate'] is True
+    assert deliver('event-patient-left-temp', f'user:{patient_id}', 'participant_left')['connection_state'] == 'RECONNECTING'
+    assert deliver('event-patient-rejoined', f'user:{patient_id}')['connection_state'] == 'CONNECTED'
     with SessionLocal() as db:
         assert db.get(Appointment, appointment_id).status == 'IN_PROGRESS'
         assert db.get(VirtualConsultation, appointment_id).status == 'EN_ATENCION'
-        assert db.scalar(select(func.count()).select_from(LiveKitRoomEvent).where(LiveKitRoomEvent.appointment_id == appointment_id)) == 2
+        assert db.scalar(select(func.count()).select_from(LiveKitRoomEvent).where(LiveKitRoomEvent.appointment_id == appointment_id)) == 4
 
     doctor, _user_id, doctor_id = doctor_client()
+    monkeypatch.setattr(livekit, 'close_room', lambda _room: True)
     try:
         done = doctor.post(f'/api/doctor/appointments/{appointment_id}/livekit-finalize', json={})
         assert done.status_code == 200, done.text
@@ -131,8 +134,26 @@ def test_livekit_webhooks_track_participants_and_doctor_finalization_is_idempote
         repeated = doctor.post(f'/api/doctor/appointments/{appointment_id}/livekit-finalize', json={})
         assert repeated.status_code == 200
         assert repeated.json()['idempotent'] is True
+        assert done.json()['started_at'] and done.json()['finalized_at']
     finally:
         doctor.close()
+
+    # Delayed provider events are auditable but cannot reopen a terminal call.
+    with SessionLocal() as db:
+        disconnect_history_count = db.scalar(select(func.count()).select_from(StatusHistory).where(
+            StatusHistory.appointment_id == appointment_id,
+            StatusHistory.status == 'LIVEKIT_PATIENT_DISCONNECTED',
+        ))
+    stale = deliver('event-patient-left-after-finalization', f'user:{patient_id}', 'participant_left')
+    assert stale['terminal'] is True
+    with SessionLocal() as db:
+        assert db.get(Appointment, appointment_id).status == 'ATTENDED'
+        assert db.get(VirtualConsultation, appointment_id).status == 'FINALIZADA'
+        assert db.get(VirtualConsultation, appointment_id).livekit_connection_state == 'DISCONNECTED'
+        assert db.scalar(select(func.count()).select_from(StatusHistory).where(
+            StatusHistory.appointment_id == appointment_id,
+            StatusHistory.status == 'LIVEKIT_PATIENT_DISCONNECTED',
+        )) == disconnect_history_count
 
     assert patient.post(f'/api/appointments/{appointment_id}/livekit-token', json={}).status_code == 409
     assert patient.get('/api/appointments?view=completed').json()[0]['status'] == 'ATTENDED'
@@ -147,3 +168,21 @@ def test_patient_cannot_finalize_livekit_consultation(patient, monkeypatch):
         db.get(VirtualConsultation, appointment_id).status = 'EN_ATENCION'
     denied = patient.post(f'/api/doctor/appointments/{appointment_id}/livekit-finalize', json={})
     assert denied.status_code in (401, 403)
+
+
+def test_room_close_retries_transient_livekit_errors(monkeypatch):
+    calls = {'count': 0}
+
+    class RoomClient:
+        async def delete_room(self, _request):
+            calls['count'] += 1
+            if calls['count'] < 3:
+                raise RuntimeError('temporary LiveKit API failure')
+
+    class FakeClient:
+        room = RoomClient()
+        async def aclose(self): pass
+
+    monkeypatch.setattr(livekit.api, 'LiveKitAPI', lambda *_args, **_kwargs: FakeClient())
+    assert livekit.close_room('room-retry-test') is True
+    assert calls['count'] == 3

@@ -88,6 +88,7 @@ const states: Record<string, string> = {
   CONNECTED: "Participantes conectados",
   RECONNECTING: "Reconectando",
   DISCONNECTED: "Desconectada",
+  FINALIZADA: "Finalizada",
 };
 const labels: Record<string, string> = {
   id: "Identificador",
@@ -95,6 +96,7 @@ const labels: Record<string, string> = {
   email: "Correo",
   role: "Rol",
   status: "Estado",
+  status_label: "Estado de la consulta",
   created_at: "Fecha",
   starts_at: "Inicio",
   ends_at: "Fin",
@@ -103,6 +105,9 @@ const labels: Record<string, string> = {
   specialty: "Especialidad",
   plan: "Plan",
   modality: "Modalidad",
+  started_at: "Hora de inicio de atención",
+  finalized_at: "Hora de finalización",
+  duration_minutes: "Duración (minutos)",
   amount: "Importe",
   copay: "Copago",
   version: "Versión",

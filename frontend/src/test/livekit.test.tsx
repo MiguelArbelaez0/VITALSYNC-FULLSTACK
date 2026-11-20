@@ -12,7 +12,13 @@ vi.mock("@livekit/components-react", () => ({
   PreJoin: ({ onSubmit, joinLabel }: { onSubmit: (choices: { audioEnabled: boolean; videoEnabled: boolean }) => void; joinLabel: string }) => (
     <button onClick={() => onSubmit({ audioEnabled: true, videoEnabled: true })}>{joinLabel}</button>
   ),
-  VideoConference: () => <div>Controles de audio y video</div>,
+  MediaDeviceSelect: () => <ul />,
+  RoomAudioRenderer: () => null,
+  VideoTrack: () => <video />,
+  useRoomContext: () => ({ localParticipant: { setMicrophoneEnabled: vi.fn(), setCameraEnabled: vi.fn(), isSpeaking: true }, remoteParticipants: new Map(), disconnect: vi.fn() }),
+  useLocalParticipant: () => ({ localParticipant: { setMicrophoneEnabled: vi.fn(), setCameraEnabled: vi.fn(), isSpeaking: true }, isMicrophoneEnabled: true, isCameraEnabled: true }),
+  useParticipants: () => [],
+  useTracks: () => [],
 }));
 
 import { LiveKitConsultation } from "../features/appointments/LiveKitConsultation";
@@ -72,31 +78,33 @@ describe("LiveKit consultation experience", () => {
     vi.stubGlobal("fetch", fetch);
     mount("PATIENT");
     fireEvent.click(await screen.findByRole("button", { name: "Ingresar a videollamada" }));
-    expect(await screen.findByText("Controles de audio y video")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Salir de la llamada" })).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith("/api/appointments/12/livekit-token", expect.objectContaining({ method: "POST" }));
   });
 
   it("requires a doctor confirmation to finalize the persistent consultation", async () => {
+    let finished = false;
     const fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url === "/api/doctor/appointments/12/teleconsult") return json({ ...appointment, status: "IN_PROGRESS", virtual_status: "EN_ATENCION" });
+      if (url === "/api/doctor/appointments/12/teleconsult") return json({ ...appointment, status: finished ? "ATTENDED" : "IN_PROGRESS", virtual_status: finished ? "FINALIZADA" : "EN_ATENCION" });
       if (url === "/api/doctor/appointments/12/livekit-token") return json({ token: "doctor-token", server_url: "ws://localhost:7880", expires_in_seconds: 600 });
-      if (url === "/api/doctor/appointments/12/livekit-finalize") return json({ appointment_status: "ATTENDED", idempotent: false });
+      if (url === "/api/doctor/appointments/12/livekit-finalize") { finished = true; return json({ appointment_status: "ATTENDED", status: "FINALIZADA", idempotent: false, finalized_at: "2026-11-15T20:25:00Z", started_at: "2026-11-15T20:00:00Z" }); }
       throw new Error(`Unexpected request ${url}`);
     });
     vi.stubGlobal("fetch", fetch);
     mount("DOCTOR");
     fireEvent.click(await screen.findByRole("button", { name: "Iniciar videollamada" }));
-    await screen.findByText("Controles de audio y video");
+    await screen.findByRole("button", { name: "Salir de la llamada" });
     fireEvent.click(screen.getByRole("button", { name: "Finalizar consulta" }));
-    fireEvent.click(screen.getByRole("button", { name: "Confirmar finalización" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar y finalizar" }));
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/doctor/appointments/12/livekit-finalize", expect.objectContaining({ method: "POST" })));
+    expect(await screen.findByRole("heading", { name: "Consulta finalizada" })).toBeInTheDocument();
   });
 
   it("does not display the prejoin form for a finalized or cancelled appointment", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => json({ ...appointment, status: "ATTENDED", livekit_enabled: true })));
     mount("PATIENT");
-    expect(await screen.findByText(/La consulta ya finalizó/)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Consulta finalizada" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Ingresar a videollamada" })).not.toBeInTheDocument();
   });
 });

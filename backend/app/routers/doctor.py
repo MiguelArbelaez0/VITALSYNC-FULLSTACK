@@ -130,8 +130,9 @@ def doctor_livekit_token(appointment_id: int, doctor=Depends(current_doctor, sco
 @router.post('/appointments/{appointment_id}/livekit-finalize')
 def finalize_livekit(appointment_id: int, background_tasks: BackgroundTasks, doctor=Depends(current_doctor, scope='function'), user=Depends(authenticated_user, scope='function'), db: Session = Depends(get_db, scope='function')):
     result = livekit_consultations.finalize(db, appointment_id, user, doctor.id)
-    if not result['idempotent']:
-        background_tasks.add_task(livekit_consultations.close_room, result['room_name'])
+    # Repeated idempotent requests also retry room closure if a previous
+    # LiveKit API call failed after PostgreSQL had already committed.
+    background_tasks.add_task(livekit_consultations.close_room, result['room_name'])
     return {key: value for key, value in result.items() if key != 'room_name'}
 
 
