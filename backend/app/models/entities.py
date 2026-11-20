@@ -45,6 +45,25 @@ class SessionToken(Base):
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
     expires_at = Column(DateTime(timezone=True), nullable=False)
 
+class GoogleIdentity(Base):
+    __tablename__ = 'google_identities'
+    sub = Column(String(255), primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, unique=True)
+    email = Column(String(254), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=now)
+
+class GoogleChallenge(Base):
+    __tablename__ = 'google_challenges'
+    token_hash = Column(String(64), primary_key=True)
+    purpose = Column(String(16), nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id'))
+    session_hash = Column(String(64))
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    consumed = Column(Boolean, nullable=False, default=False)
+    sub = Column(String(255))
+    email = Column(String(254))
+    name = Column(String(120))
+
 class Specialty(Base):
     __tablename__ = 'specialties'
     id = Column(Integer, primary_key=True)

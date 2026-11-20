@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState, type ReactNode } from "react";
+import { GoogleAccountLink } from "../auth/GoogleAuth";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import {
@@ -663,6 +664,7 @@ export function DoctorProfilePage() {
           </Button>
         </form>
         <DoctorPasswordForm />
+        <GoogleAccountLink />
       </section>
     </div>
   );

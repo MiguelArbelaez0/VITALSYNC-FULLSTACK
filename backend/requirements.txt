@@ -8,3 +8,5 @@ pwdlib[argon2]>=0.2,<1
 pytest>=8,<10
 httpx>=0.28,<1
 livekit-api>=2.0,<3
+google-auth==2.62.2
+requests==2.34.2

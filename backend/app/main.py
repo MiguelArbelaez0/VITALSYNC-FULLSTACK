@@ -19,11 +19,13 @@ from app.services import demo_livekit
 from app.routers.doctor import router as doctor_router
 from app.routers.admin import router as admin_router
 from app.routers.recovery import router as recovery_router
+from app.routers.google_auth import router as google_router
 
 app = FastAPI(title='VITALSYNC · Portales integrados', version='1.1.0')
 app.include_router(doctor_router)
 app.include_router(admin_router)
 app.include_router(recovery_router)
+app.include_router(google_router)
 PRIVACY_NOTICE_VERSION = 'VITALSYNC-PRIVACIDAD-2026-11-v1'
 
 @app.middleware('http')

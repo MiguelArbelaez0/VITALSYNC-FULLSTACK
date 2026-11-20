@@ -5,6 +5,7 @@ import {
   button,
   account,
   recovery,
+  revokeGoogle,
   type Context,
 } from "./AdminCore";
 export function PeopleAppointments({ c }: { c: Context }) {
@@ -68,6 +69,7 @@ export function PeopleAppointments({ c }: { c: Context }) {
                     () => recovery(c, r),
                     !r.user_id || !r.enabled,
                   )}
+                  {button("Revocar Google", () => revokeGoogle(c, r), !r.user_id)}
                 </>
               )}
             </>
@@ -175,6 +177,7 @@ export function PeopleAppointments({ c }: { c: Context }) {
                     () => recovery(c, r),
                     r.status !== "ACTIVE",
                   )}
+                  {button("Revocar Google", () => revokeGoogle(c, r))}
                 </>
               )}
             </>

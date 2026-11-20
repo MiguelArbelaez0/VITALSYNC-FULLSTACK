@@ -9,6 +9,7 @@ import { post } from "../../services/api";
 import { useAuth } from "../../hooks/useAuth";
 import { Button } from "../../components/ui/button";
 import { ErrorBox, Logo } from "../../components/common";
+import { GoogleSignIn } from "./GoogleAuth";
 
 const authFields = z.object({
   email: z.email("Ingresa un correo válido"),
@@ -195,6 +196,7 @@ export function Auth({ register = false }: { register?: boolean }) {
               </p>
             </div>
           )}
+          {!isRegister && <GoogleSignIn />}
           <form
             className={isRegister ? "registration-form" : undefined}
             onSubmit={handleSubmit(submit)}

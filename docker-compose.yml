@@ -31,6 +31,7 @@ services:
       TELECONSULT_WAIT_GRACE_MINUTES: ${TELECONSULT_WAIT_GRACE_MINUTES:-15}
       SESSION_HOURS: ${SESSION_HOURS:-12}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       LIVEKIT_ENABLED: ${LIVEKIT_ENABLED:-false}
       LIVEKIT_API_URL: http://livekit:7880
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
@@ -49,7 +50,10 @@ services:
       timeout: 3s
       retries: 25
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
     restart: unless-stopped
     ports:
       - "127.0.0.1:${VITALSYNC_FRONTEND_PORT:-5188}:80"

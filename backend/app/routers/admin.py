@@ -21,6 +21,21 @@ def require(scope):
 
 def paging(page:int=Query(1,ge=1),size:int=Query(20,ge=1,le=100)):return page,size
 
+from app.routers.google_auth import RevokeInput, browser, reauthenticate
+from app.models.entities import GoogleIdentity, GoogleChallenge
+from fastapi import Request
+
+@router.post('/users/{id}/google-revoke')
+def revoke_google(id: int, data: RevokeInput, request: Request, user=Depends(require('accounts'),scope='function'), db:Session=Depends(get_db,scope='function')):
+    browser(request)
+    reauthenticate(user, data.current_password)
+    target = s.get(db, User, id, True)
+    db.execute(delete(GoogleIdentity).where(GoogleIdentity.user_id == target.id))
+    db.execute(delete(GoogleChallenge).where(GoogleChallenge.user_id == target.id))
+    db.execute(delete(SessionToken).where(SessionToken.user_id == target.id))
+    s.audit(db, user, 'GOOGLE_IDENTITY_REVOKED', 'user', target.id, reason=data.reason)
+    return {'linked': False, 'sessions_revoked': True}
+
 def period(query,column,since,until):
     if since and until and until<since:s.fail('La fecha final debe ser posterior a la inicial',422)
     if since:query=query.where(column>=datetime.combine(since,time.min,tzinfo=s.BOGOTA))

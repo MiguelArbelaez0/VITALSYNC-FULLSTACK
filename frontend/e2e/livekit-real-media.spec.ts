@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { createSign } from "node:crypto";
 
 test("LiveKit real media connects patient and assigned doctor and records explicit finalization", async ({ page, browser }, info) => {
   test.setTimeout(180000);
@@ -13,6 +14,41 @@ test("LiveKit real media connects patient and assigned doctor and records explic
     permissions: ["camera", "microphone"],
   });
   const patientPage = await patientContext.newPage();
+  async function installGoogleFixture(targetPage: typeof page, sub: string, email: string) {
+    await targetPage.exposeFunction("fixtureGoogleCredential", (nonce: string) => {
+      const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+      const header = encode({ alg: "RS256", typ: "JWT", kid: "e2e-fixture" });
+      const body = encode({ sub, email, name: "Usuario Google de prueba", email_verified: true, aud: "controlled-client.apps.googleusercontent.com", iss: "https://accounts.google.com", iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 300, nonce });
+      const signed = `${header}.${body}`;
+      return `${signed}.${createSign("RSA-SHA256").update(signed).sign(credentials.google_private_key, "base64url")}`;
+    });
+    await targetPage.addInitScript(() => {
+      let options: any;
+      (window as any).google = { accounts: { id: {
+        initialize: (value: any) => { options = value; },
+        renderButton: (element: HTMLElement) => {
+          const button = document.createElement("button"); button.textContent = "Continuar con Google";
+          button.onclick = async () => options.callback({ credential: await (window as any).fixtureGoogleCredential(options.nonce) });
+          element.appendChild(button);
+        },
+      } } };
+    });
+  }
+  if (process.env.E2E_GOOGLE_FIXTURE === "true") {
+    await installGoogleFixture(page, "e2e-google-doctor", "personal-doctor@example.com");
+    await installGoogleFixture(patientPage, "e2e-google-patient", "personal-patient@example.com");
+  }
+  async function linkAndSignInWithGoogle(targetPage: typeof page, role: "doctor" | "portal", password: string) {
+    await targetPage.goto(`/${role}/profile`);
+    await targetPage.getByLabel("Contraseña actual para confirmar tu identidad").fill(password);
+    await targetPage.getByRole("button", { name: "Verificar contraseña y vincular Google" }).click();
+    await targetPage.getByRole("button", { name: "Continuar con Google", exact: true }).click();
+    await expect(targetPage.getByText("Cuenta Google vinculada correctamente.")).toBeVisible();
+    await targetPage.request.post("/api/auth/logout");
+    await targetPage.goto("/login");
+    await targetPage.getByRole("button", { name: "Continuar con Google", exact: true }).click();
+    await expect(targetPage).toHaveURL(new RegExp(`/${role}$`));
+  }
   patientPage.setDefaultTimeout(20000);
   page.setDefaultTimeout(20000);
   await page.context().grantPermissions(["camera", "microphone"], { origin: baseURL });
@@ -22,15 +58,27 @@ test("LiveKit real media connects patient and assigned doctor and records explic
     expect(login.ok()).toBeTruthy();
 
     await page.goto("/login");
+    if (process.env.E2E_GOOGLE_FIXTURE === "true") {
+      const prepared = await page.request.post("/api/auth/google/challenge", { headers: { Origin: baseURL }, data: { purpose: "LOGIN" } });
+      const unlinkedChallenge = await prepared.json();
+      const credential = await page.evaluate((nonce: string) => (window as any).fixtureGoogleCredential(nonce), unlinkedChallenge.nonce);
+      const unlinked = await page.request.post("/api/auth/google/exchange", { headers: { Origin: baseURL }, data: { challenge: unlinkedChallenge.challenge, credential } });
+      expect((await unlinked.json()).registration_required).toBe(true);
+      expect((await page.request.get("/api/doctor/dashboard")).status()).toBe(401);
+      // A verified Google identity alone never creates a professional account.
+    }
     await page.getByLabel("Correo electrónico").fill(credentials.legacy.email);
     await page.getByLabel("Contraseña", { exact: true }).fill(credentials.legacy.password);
     await page.getByRole("button", { name: "Iniciar sesión", exact: true }).click();
     await expect(page).toHaveURL(/\/doctor$/);
+    if (process.env.E2E_GOOGLE_FIXTURE === "true") await linkAndSignInWithGoogle(page, "doctor", credentials.legacy.password);
 
     await patientPage.goto("/login");
     await patientPage.getByLabel("Correo electrónico").fill(credentials.patient.email);
     await patientPage.getByLabel("Contraseña", { exact: true }).fill(credentials.patient.password);
     await patientPage.getByRole("button", { name: "Iniciar sesión", exact: true }).click();
+    await expect(patientPage).toHaveURL(/\/portal$/);
+    if (process.env.E2E_GOOGLE_FIXTURE === "true") await linkAndSignInWithGoogle(patientPage, "portal", credentials.patient.password);
     await patientPage.goto("/portal/appointments");
     await expect(patientPage.getByRole("heading", { name: "Prueba una videollamada ahora" })).toBeVisible();
     await patientPage.getByRole("button", { name: "Probar con Dr. Alejandro Méndez" }).click();

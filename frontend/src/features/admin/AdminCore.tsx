@@ -273,6 +273,15 @@ export function recovery(c: Context, r: Row) {
       "La contraseña actual no cambia. El operador emitirá un enlace de un solo uso mediante el comando local documentado.",
   });
 }
+export function revokeGoogle(c: Context, r: Row) {
+  c.open({
+    title: "Revocar vinculación Google",
+    path: `/users/${r.user_id ?? r.id}/google-revoke`,
+    fields: [{ key: "current_password", label: "Tu contraseña de administrador", type: "password", required: true }],
+    confirm: true,
+    description: "Revoca la vinculación y todas las sesiones del usuario. Confirma tu identidad e indica el motivo. La contraseña del usuario se conserva.",
+  });
+}
 export function account(c: Context, r: Row) {
   c.open({
     title:

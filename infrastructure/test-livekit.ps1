@@ -1,4 +1,4 @@
-param([switch]$UsePhysicalDevices)
+param([switch]$UsePhysicalDevices, [switch]$GoogleProviderFixture)
 $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
 
@@ -10,6 +10,7 @@ if (-not (Test-Path -LiteralPath '.env')) {
 $previousTestName = $env:VITALSYNC_TEST_DATABASE_NAME
 $env:VITALSYNC_TEST_DATABASE_NAME = 'vitalsync_test_audit_' + (Get-Date -Format 'yyyyMMddHHmmss')
 $composeArgs = @('-p','vitalsync','-f','docker-compose.yml','-f','infrastructure/compose.test.yml','-f','infrastructure/compose.video-test.yml')
+if ($GoogleProviderFixture) { $composeArgs += @('-f','infrastructure/compose.google-test.yml') }
 $configText = docker compose @composeArgs config --format json
 if ($LASTEXITCODE -ne 0) { throw 'Compose de pruebas LiveKit inválido.' }
 $config = ($configText -join "`n") | ConvertFrom-Json
@@ -47,6 +48,7 @@ try {
   docker exec vitalsync-test-backend-1 python -c "from pathlib import Path; Path('/tmp/e2e.credentials.json').unlink()"
   $env:E2E_BASE_URL = 'http://localhost:5289'
   $env:E2E_LIVEKIT_REAL = 'true'
+  if ($GoogleProviderFixture) { $env:E2E_GOOGLE_FIXTURE = 'true' }
   if ($UsePhysicalDevices) { $env:E2E_LIVEKIT_PHYSICAL = 'true' }
   $env:E2E_CREDENTIALS_FILE = $credentialsFile
   Push-Location frontend
@@ -58,6 +60,7 @@ finally {
   docker compose @composeArgs rm -s -f test-backend test-frontend test-livekit
   if (Test-Path -LiteralPath $folder) { Remove-Item -LiteralPath $folder -Recurse -Force }
   Remove-Item Env:E2E_LIVEKIT_REAL -ErrorAction SilentlyContinue
+  Remove-Item Env:E2E_GOOGLE_FIXTURE -ErrorAction SilentlyContinue
   Remove-Item Env:E2E_LIVEKIT_PHYSICAL -ErrorAction SilentlyContinue
   Remove-Item Env:E2E_CREDENTIALS_FILE -ErrorAction SilentlyContinue
   Remove-Item Env:E2E_BASE_URL -ErrorAction SilentlyContinue
