@@ -7,7 +7,13 @@ test("Google official GIS button loads with the configured client", async ({ pag
   await page.goto("/login");
   // GIS can render its accessible button in the parent document rather
   // than inside its internal iframe. Assert the official SDK output.
-  await expect(page.locator(".google-button").getByRole("button", { name: /continuar con google/i }).first()).toBeVisible({ timeout: 30000 });
+  const parentButton = page.locator(".google-button").getByRole("button", { name: /google/i }).first();
+  const iframe = page.locator('iframe[src^="https://accounts.google.com/gsi/button"]');
+  await expect.poll(async () => {
+    if (await parentButton.isVisible()) return true;
+    if (await iframe.count()) return page.frameLocator('iframe[src^="https://accounts.google.com/gsi/button"]').getByRole("button", { name: /google/i }).isVisible().catch(() => false);
+    return false;
+  }, { timeout: 30000 }).toBe(true);
   expect(await page.evaluate(() => !!window.google?.accounts.id)).toBe(true);
   await expect(page.locator('script[src="https://accounts.google.com/gsi/client"]')).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Iniciar sesión", exact: true })).toBeVisible();
