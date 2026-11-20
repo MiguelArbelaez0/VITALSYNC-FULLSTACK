@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import {
   LiveKitRoom,
   MediaDeviceSelect,
-  PreJoin,
   RoomAudioRenderer,
   type TrackReference,
   VideoTrack,
@@ -25,8 +24,8 @@ import { Dialog } from "../../components/ui/dialog";
 import { ErrorBox, Loading, PageTitle } from "../../components/common";
 import "@livekit/components-styles";
 import "./livekit-consultation.css";
+import { DevicePreview, mediaErrorMessage, type PreviewChoices } from "./DevicePreview";
 
-type UserChoices = Parameters<NonNullable<ComponentProps<typeof PreJoin>["onSubmit"]>>[0];
 type TokenResponse = { token: string; server_url: string; expires_in_seconds: number };
 type FinalizeResponse = { status: string; appointment_status: string; finalized_at?: string; started_at?: string; idempotent: boolean };
 
@@ -55,7 +54,10 @@ export function LiveKitConsultation({ appointmentId, role }: { appointmentId: st
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [credentials, setCredentials] = useState<TokenResponse | null>(null);
-  const [choices, setChoices] = useState<UserChoices | null>(null);
+  const [choices, setChoices] = useState<PreviewChoices | null>(null);
+  const audioCapture = useMemo(() => choices?.audioDeviceId ? { deviceId: choices.audioDeviceId } : {}, [choices]);
+  const videoCapture = useMemo(() => choices?.videoDeviceId ? { deviceId: choices.videoDeviceId } : {}, [choices]);
+  const roomOptions = useMemo(() => ({ adaptiveStream: true, dynacast: true, audioCaptureDefaults: audioCapture, videoCaptureDefaults: videoCapture }), [audioCapture, videoCapture]);
   const [busy, setBusy] = useState(false);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -77,7 +79,8 @@ export function LiveKitConsultation({ appointmentId, role }: { appointmentId: st
     return () => window.clearInterval(timer);
   }, []);
 
-  async function joinRoom(selected: UserChoices) {
+  async function joinRoom(selected: PreviewChoices) {
+    if (busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -184,9 +187,9 @@ export function LiveKitConsultation({ appointmentId, role }: { appointmentId: st
                   token={credentials.token}
                   serverUrl={credentials.server_url}
                   connect
-                  audio={choices.audioEnabled}
-                  video={choices.videoEnabled}
-                  options={{ adaptiveStream: true, dynacast: true }}
+                  audio={choices.audioEnabled ? audioCapture : false}
+                  video={choices.videoEnabled ? videoCapture : false}
+                  options={roomOptions}
                   onConnected={() => setConnected(true)}
                   onDisconnected={() => {
                     setConnected(false);
@@ -195,7 +198,7 @@ export function LiveKitConsultation({ appointmentId, role }: { appointmentId: st
                     void queryClient.invalidateQueries({ queryKey });
                     if (exitRequested.current) navigate(portalPath(role));
                   }}
-                  onError={(cause) => setError(cause)}
+                  onError={setError}
                   data-lk-theme="default"
                   className="livekit-room"
                 >
@@ -204,7 +207,6 @@ export function LiveKitConsultation({ appointmentId, role }: { appointmentId: st
                     localLabel={role === "PATIENT" ? "Tú · Paciente" : "Tú · Médico"}
                     consultationInProgress={appointment.status === "IN_PROGRESS"}
                     onExit={() => { exitRequested.current = true; }}
-                    onError={setError}
                     onFinish={canFinish ? () => setFinalizeOpen(true) : undefined}
                     finishing={finalizing}
                     elapsed={durationLabel(startedAt, null, clock)}
@@ -214,14 +216,7 @@ export function LiveKitConsultation({ appointmentId, role }: { appointmentId: st
                 <div className="livekit-prejoin-shell">
                   <div className="livekit-prejoin-heading"><span className="livekit-prejoin-icon"><Video size={24} /></span><div><h2>Antes de ingresar</h2><p>Comprueba cámara, micrófono y conexión.</p></div></div>
                   <p className="livekit-privacy-note">Videollamada privada en tiempo real. No se graba audio, video ni transcripciones.</p>
-                  <PreJoin
-                    defaults={{ username: role === "PATIENT" ? "Paciente" : "Médico" }}
-                    onSubmit={(selected) => void joinRoom(selected)}
-                    onError={(cause) => setError(cause)}
-                    userLabel={role === "PATIENT" ? "Paciente" : "Médico"}
-                    joinLabel={busy ? "Solicitando acceso…" : role === "PATIENT" ? "Ingresar a videollamada" : "Iniciar videollamada"}
-                    persistUserChoices
-                  />
+                  <DevicePreview busy={busy} onJoin={joinRoom} joinLabel={role === "PATIENT" ? "Ingresar a videollamada" : "Iniciar videollamada"} />
                   <ErrorBox error={error ? displayError(error) : null} />
                   {appointment.livekit_connection_state === "RECONNECTING" && <p className="livekit-retry-note" role="status">El otro participante se desconectó temporalmente. Puedes ingresar de nuevo cuando estés listo.</p>}
                 </div>
@@ -274,10 +269,10 @@ function connectionLabel(serverState: Appointment["livekit_connection_state"], c
 }
 
 function RoomSurface({
-  remoteLabel, localLabel, onExit, onError, onFinish, finishing, elapsed,
+  remoteLabel, localLabel, onExit, onFinish, finishing, elapsed,
   consultationInProgress,
 }: {
-  remoteLabel: string; localLabel: string; onExit: () => void; onError: (error: unknown) => void;
+  remoteLabel: string; localLabel: string; onExit: () => void;
   onFinish?: () => void; finishing: boolean; elapsed: string; consultationInProgress: boolean;
 }) {
   const room = useRoomContext();
@@ -288,14 +283,19 @@ function RoomSurface({
   const localTrack = useMemo(() => tracks.find((track) => track.participant.isLocal), [tracks]);
   const [deviceMenu, setDeviceMenu] = useState(false);
   const [operation, setOperation] = useState("");
+  const [mediaError, setMediaError] = useState("");
+  const cameraError = useCallback((cause: Error) => setMediaError(mediaErrorMessage(cause, "camera")), []);
+  const microphoneError = useCallback((cause: Error) => setMediaError(mediaErrorMessage(cause, "microphone")), []);
+  const outputError = useCallback(() => setMediaError("No se pudo seleccionar la salida de audio. Revisa el dispositivo y vuelve a elegirlo en Dispositivos."), []);
   const remoteConnected = participants.some((participant) => !participant.isLocal);
 
   async function toggle(kind: "microphone" | "camera") {
     setOperation(kind);
+    setMediaError("");
     try {
       if (kind === "microphone") await localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled);
       else await localParticipant.setCameraEnabled(!isCameraEnabled);
-    } catch (cause) { onError(cause); }
+    } catch (cause) { setMediaError(mediaErrorMessage(cause, kind)); }
     finally { setOperation(""); }
   }
 
@@ -312,7 +312,7 @@ function RoomSurface({
       {consultationInProgress && !remoteConnected && <div className="livekit-peer-notice" role="status"><strong>El otro participante salió o perdió la conexión.</strong><span>La consulta sigue activa; podrá volver a ingresar mientras la cita esté autorizada.</span></div>}
       <div className="livekit-video-grid">
         <div className="livekit-main-video">
-          {remoteTrack && "publication" in remoteTrack && remoteTrack.publication ? <VideoTrack trackRef={remoteTrack as TrackReference} /> : <div className="livekit-video-placeholder"><span>{remoteLabel.slice(0, 1).toUpperCase()}</span><strong>{remoteLabel}</strong><small>{remoteTrack ? "Cámara desactivada" : "Esperando al otro participante…"}</small></div>}
+          {remoteTrack?.publication && !remoteTrack.publication.isMuted ? <VideoTrack trackRef={remoteTrack as TrackReference} /> : <div className="livekit-video-placeholder"><span>{remoteLabel.slice(0, 1).toUpperCase()}</span><strong>{remoteLabel}</strong><small>{remoteTrack ? "Cámara desactivada" : "Esperando al otro participante…"}</small></div>}
           <div className="livekit-video-name"><span className="livekit-live-dot" />{remoteLabel}</div>
           <RoomAudioRenderer />
         </div>
@@ -332,7 +332,7 @@ function RoomSurface({
           <button type="button" className={`livekit-control ${deviceMenu ? "is-selected" : ""}`} onClick={() => setDeviceMenu((shown) => !shown)} aria-expanded={deviceMenu}>
             <Settings2 /><span>Dispositivos</span>
           </button>
-          {deviceMenu && <div className="livekit-device-menu"><h3>Micrófono</h3><MediaDeviceSelect kind="audioinput" onError={onError} /><h3>Cámara</h3><MediaDeviceSelect kind="videoinput" onError={onError} /><h3>Salida de audio</h3><MediaDeviceSelect kind="audiooutput" onError={onError} /><p>Compartir pantalla no está habilitado para esta sala.</p></div>}
+          {deviceMenu && <div className="livekit-device-menu"><h3>Micrófono</h3><MediaDeviceSelect kind="audioinput" onError={microphoneError} onDeviceSelectError={microphoneError} /><h3>Cámara</h3><MediaDeviceSelect kind="videoinput" onError={cameraError} onDeviceSelectError={cameraError} /><h3>Salida de audio</h3><MediaDeviceSelect kind="audiooutput" onError={outputError} onDeviceSelectError={outputError} /><p>Compartir pantalla no está habilitado para esta sala.</p></div>}
         </div>
         <span className="livekit-control-spacer" />
         <button type="button" className="livekit-control livekit-leave-control" onClick={() => void leave()}><PhoneOff /><span>Salir de la llamada</span></button>
@@ -340,6 +340,7 @@ function RoomSurface({
           <Phone /><span>{finishing ? "Finalizando…" : "Finalizar consulta"}</span>
         </button>}
       </div>
+      {mediaError && <p className="livekit-peer-notice" role="alert">{mediaError} Usa el control correspondiente para reintentar.</p>}
       <div className="livekit-connected-footer"><Headphones size={16} /><span>Audio y video en tiempo real · No se graba</span><span className="livekit-connected-label"><span />Conectado</span></div>
     </div>
   );

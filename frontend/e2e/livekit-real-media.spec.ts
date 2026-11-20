@@ -51,6 +51,13 @@ test("LiveKit real media connects patient and assigned doctor and records explic
   }
   patientPage.setDefaultTimeout(20000);
   page.setDefaultTimeout(20000);
+  async function enablePreview(target: typeof page) {
+    await target.getByRole("button", { name: "Activar cámara", exact: true }).click();
+    await target.getByRole("button", { name: "Activar micrófono", exact: true }).click();
+    await expect(target.getByRole("button", { name: "Desactivar cámara", exact: true })).toBeEnabled();
+    await expect(target.getByRole("button", { name: "Desactivar micrófono", exact: true })).toBeEnabled();
+    await expect.poll(() => target.locator("video").evaluateAll((videos) => videos.some((video) => video instanceof HTMLVideoElement && video.readyState >= 2 && video.videoWidth > 0))).toBeTruthy();
+  }
   await page.context().grantPermissions(["camera", "microphone"], { origin: baseURL });
   try {
     const request = patientContext.request;
@@ -96,16 +103,19 @@ test("LiveKit real media connects patient and assigned doctor and records explic
     expect(appointment.copay).toBe(0);
     expect(appointment.livekit_enabled).toBe(true);
     await expect(patientPage.getByRole("heading", { name: "Videoconsulta" })).toBeVisible();
-    await expect(patientPage.locator(".lk-prejoin")).toBeVisible();
+    await expect(patientPage.locator(".vitalsync-prejoin")).toBeVisible();
+    await enablePreview(patientPage);
     if (process.env.E2E_LIVEKIT_PHYSICAL !== "true") {
       await patientPage.screenshot({ path: resolve(import.meta.dirname, `../../docs/screenshots/livekit-prejoin-${info.project.name}.png`), fullPage: true });
     }
+    await patientPage.getByRole("button", { name: "Desactivar cámara", exact: true }).click();
 
     await page.goto("/doctor/appointments");
     await expect(page.getByText("Consulta académica de prueba").first()).toBeVisible();
     await page.locator(`a[href="/doctor/appointments/${appointmentId}"]`).click();
     await expect(page.getByText("Consulta académica de prueba").first()).toBeVisible();
     await page.getByRole("link", { name: "Ingresar a videollamada" }).click();
+    await enablePreview(page);
     await page.getByRole("button", { name: "Iniciar videollamada" }).click();
     await patientPage.getByRole("button", { name: "Ingresar a videollamada" }).click();
     await expect(page.getByText("Esperando al otro participante", { exact: true })).toBeVisible();
@@ -115,6 +125,16 @@ test("LiveKit real media connects patient and assigned doctor and records explic
     await expect.poll(async () => (await (await request.get(`/api/appointments/${appointmentId}`)).json()).status, { timeout: 30000 }).toBe("IN_PROGRESS");
     await expect.poll(async () => (await (await request.get(`/api/appointments/${appointmentId}`)).json()).virtual_state?.started_at, { timeout: 30000 }).toBeTruthy();
     await expect(patientPage.locator(".livekit-duration")).not.toContainText("Pendiente", { timeout: 15000 });
+    // Audio-only entry preserves the explicit camera choice, then permits enabling it in-room.
+    await expect(patientPage.getByRole("button", { name: "Activar cámara", exact: true })).toBeVisible();
+    await patientPage.getByRole("button", { name: "Activar cámara", exact: true }).click();
+    await expect(patientPage.getByRole("button", { name: "Apagar cámara", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Silenciar", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Activar micrófono", exact: true })).toHaveAttribute("aria-pressed", "false");
+    await page.getByRole("button", { name: "Activar micrófono", exact: true }).click();
+    await page.getByRole("button", { name: "Apagar cámara", exact: true }).click();
+    await expect(patientPage.getByText("Cámara desactivada", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Activar cámara", exact: true }).click();
 
     const remoteVideoHasFrames = async () => patientPage.locator("video").evaluateAll((videos) =>
       videos.filter((element) => element instanceof HTMLVideoElement
@@ -153,12 +173,14 @@ test("LiveKit real media connects patient and assigned doctor and records explic
     const afterExit = await (await request.get(`/api/appointments/${appointmentId}`)).json();
     expect(afterExit.status).toBe("IN_PROGRESS");
     await patientPage.goto(`/portal/appointments/${appointmentId}/teleconsult`);
+    await enablePreview(patientPage);
     await patientPage.getByRole("button", { name: "Ingresar a videollamada" }).click();
     await expect(patientPage.getByText("Conectado", { exact: true }).first()).toBeVisible({ timeout: 30000 });
 
     await page.reload();
-    await expect(page.locator(".lk-prejoin")).toBeVisible();
+    await expect(page.locator(".vitalsync-prejoin")).toBeVisible();
     await expect(patientPage.getByText("El otro participante salió o perdió la conexión.")).toBeVisible({ timeout: 30000 });
+    await enablePreview(page);
     await page.getByRole("button", { name: "Iniciar videollamada" }).click();
     await expect(page.getByText("Conectado", { exact: true }).first()).toBeVisible({ timeout: 30000 });
 

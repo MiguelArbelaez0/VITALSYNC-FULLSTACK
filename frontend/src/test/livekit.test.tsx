@@ -3,9 +3,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+const published = vi.hoisted(() => ({ audio: null as any, video: null as any }));
+vi.mock("../features/appointments/DevicePreview", () => ({
+  DevicePreview: ({ onJoin, joinLabel }: { onJoin: (choices: unknown) => void; joinLabel: string }) => <button onClick={() => onJoin({ audioEnabled: true, videoEnabled: true, audioDeviceId: "chosen-microphone", videoDeviceId: "chosen-camera" })}>{joinLabel}</button>,
+  mediaErrorMessage: () => "Error de dispositivo",
+}));
 
 vi.mock("@livekit/components-react", () => ({
-  LiveKitRoom: ({ children, onConnected }: { children: ReactNode; onConnected?: () => void }) => {
+  LiveKitRoom: ({ children, onConnected, audio, video }: { children: ReactNode; onConnected?: () => void; audio: unknown; video: unknown }) => {
+    published.audio = audio; published.video = video;
     useEffect(() => { onConnected?.(); }, [onConnected]);
     return <div data-testid="livekit-room">{children}</div>;
   },
@@ -66,6 +72,8 @@ function json(data: unknown, status = 200) {
 describe("LiveKit consultation experience", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.stubGlobal("isSecureContext", true);
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: vi.fn(), enumerateDevices: async () => [], addEventListener: vi.fn(), removeEventListener: vi.fn() } });
   });
 
   it("asks the patient endpoint for a token before opening the media room", async () => {
@@ -80,6 +88,8 @@ describe("LiveKit consultation experience", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Ingresar a videollamada" }));
     expect(await screen.findByRole("button", { name: "Salir de la llamada" })).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith("/api/appointments/12/livekit-token", expect.objectContaining({ method: "POST" }));
+    expect(published.audio).toEqual({ deviceId: "chosen-microphone" });
+    expect(published.video).toEqual({ deviceId: "chosen-camera" });
   });
 
   it("requires a doctor confirmation to finalize the persistent consultation", async () => {

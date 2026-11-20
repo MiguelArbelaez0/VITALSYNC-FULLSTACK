@@ -8,7 +8,7 @@ La videollamada solo se habilita si el entorno tiene LiveKit configurado. Si Liv
 
 ## Arquitectura
 
-- React carga `PreJoin`, `LiveKitRoom`, los hooks oficiales de tracks/participantes y componentes LiveKit de video/audio bajo demanda desde los portales de paciente y médico. La sala VitalSync renderiza el video remoto como escenario principal y el propio como vista flotante, con controles institucionales adaptables.
+- React carga `DevicePreview`, `LiveKitRoom`, los hooks oficiales de tracks/participantes y componentes LiveKit de video/audio bajo demanda desde los portales de paciente y médico. `DevicePreview` usa `createLocalVideoTrack`, `createLocalAudioTrack` y `createAudioAnalyser` del SDK ya instalado, sin conectarse a ninguna sala. La sala VitalSync renderiza el video remoto como escenario principal y el propio como vista flotante, con controles institucionales adaptables.
 - FastAPI emite tokens cortos después de verificar sesión, rol, cita virtual, titularidad, asignación y ventana horaria.
 - PostgreSQL conserva el nombre estable de la sala por cita, estado de conexión, auditoría e historial de eventos administrativos. Nunca almacena audio, video ni transcripciones.
 - El servidor LiveKit se incorpora al Compose existente `vitalsync` bajo el perfil `video`; el volumen de PostgreSQL no cambia.
@@ -17,7 +17,7 @@ La videollamada solo se habilita si el entorno tiene LiveKit configurado. Si Liv
 - Solo se listan médicos vinculados a una cuenta activa y marcada como profesional demo; el paciente también debe tener registro explícito en `demo_patients`. El navegador no puede activar esta política enviando un parámetro.
 - Las citas de prueba no tienen retención, plan, pago ni copago. La migración `20261122_demo_instant_calls` permite esas columnas nulas solo para citas marcadas como demo y virtuales; las citas ordinarias siguen exigiendo sus relaciones de cobertura y retención.
 
-LiveKit documenta `PreJoin` para previsualizar y seleccionar cámara y micrófono antes de conectar, y `LiveKitRoom` como proveedor React de la sesión ([PreJoin](https://docs.livekit.io/reference/components/react/component/prejoin/), [LiveKitRoom](https://docs.livekit.io/reference/components/react/component/livekitroom/)).
+La fase de preparación es independiente de `LiveKitRoom`, proveedor React de la sesión ([LiveKitRoom](https://docs.livekit.io/reference/components/react/component/livekitroom/)). La aplicación solicita el token y conecta/publica únicamente cuando el participante confirma el ingreso.
 
 ## Preparación local en Windows
 
@@ -71,7 +71,13 @@ La interfaz de administración muestra si el proveedor está configurado y el es
 
 ## Dispositivos y errores
 
-`PreJoin` ofrece vista previa y permisos de dispositivos. En la sala, los controles cambian cámara y micrófono; el menú oficial LiveKit permite seleccionar entrada de audio, cámara y salida de audio. Compartir pantalla permanece deshabilitado porque los tokens del backend solo permiten publicar cámara y micrófono. Permisos denegados, falta de dispositivos, servidor no disponible o red interrumpida se muestran con mensajes entendibles; se puede volver a preparación y solicitar un token nuevo mientras la cita siga activa y dentro de su ventana.
+`DevicePreview` inicia cámara y micrófono por separado tras pulsar **Activar cámara** / **Activar micrófono**. Las opciones elegidas se transmiten como `audio`/`video` y defaults de captura a `LiveKitRoom`. Se permite entrar sin cámara; no se reutilizan silenciosamente los flags antiguos de `lk-user-choices`. Un error de micrófono no elimina una vista previa de cámara válida.
+
+La cámara local se adjunta a un video `muted`, `autoPlay`, `playsInline`. Si la reproducción requiere una interacción adicional, aparece **Mostrar vista previa**. El medidor de micrófono analiza localmente el volumen, sin reproducirlo ni grabarlo. `enumerateDevices` y `devicechange` actualizan las listas. Al cambiar de dispositivo se liberan las pistas anteriores; las adquisiciones que terminan después de desmontar se detienen. Al confirmar ingreso se detienen los medios de preparación antes de crear los medios de sala, evitando ocupar dos veces la webcam. La limpieza también desacopla el video, cierra el analizador y retira listeners.
+
+Permiso denegado, dispositivo inexistente/ocupado, restricciones incompatibles, desconexión del dispositivo y contexto inseguro tienen mensajes distintos en español y opción de reintentar. Una selección incompatible intenta recuperar el dispositivo predeterminado. Para contexto no seguro se indica HTTPS o localhost. El ingreso solo se bloquea durante adquisición/solicitud de acceso o cuando el navegador carece de un contexto seguro/API multimedia; un error de cámara no bloquea el audio disponible.
+
+En la sala, los controles cambian cámara y micrófono; el menú oficial LiveKit permite seleccionar entrada de audio, cámara y salida de audio. Una cámara remota apagada muestra su estado en vez de un último fotograma congelado. Compartir pantalla permanece deshabilitado porque los tokens del backend solo permiten publicar cámara y micrófono. Se puede volver a preparación y solicitar un token nuevo mientras la cita siga activa y dentro de su ventana.
 
 Los tokens duran como máximo 15 minutos. Si expiran antes del ingreso, se solicita otro mediante la misma comprobación de permisos. Una consulta finalizada o cancelada nunca vuelve a emitirlos.
 
@@ -87,7 +93,43 @@ Los puertos publicados en este Compose local quedan asociados a `127.0.0.1`. Liv
 
 ## Pruebas
 
-Las pruebas de la ruta académica cubren los cinco médicos, citas sin plan ni pago, repetición idempotente, bloqueo a pacientes normales y rechazo de un médico ocupado. Las pruebas de migración verifican una única cabeza Alembic. El E2E real de medios inicia la prueba desde **Mis citas**, confirma que el médico ve la etiqueta académica en su agenda y conecta ambas cuentas usando la cámara/micrófono físicos; después verifica finalización formal e historial.
+### Corrección de vista previa y contraste · 20 de noviembre de 2026
+
+El diagnóstico se reprodujo contra la implementación anterior, con respuestas API de fixture y medios sintéticos (sin escribir datos principales): en 3,2 segundos, `getUserMedia` aumentó de 3 a 12 solicitudes. `LiveKitConsultation` actualiza el reloj cada segundo y pasaba a `PreJoin` un `onError` inline. En la versión instalada, `usePreviewTracks` incluye ese callback en las dependencias del efecto; cada nueva referencia limpiaba las pistas y reiniciaba la captura. Esto interrumpía la vista previa y podía impedir que una webcam física terminara de iniciar. La prueba física de ese comportamiento queda pendiente.
+
+Se comprobaron además tres problemas de integración: las reglas `[data-lk-theme="default"]` no alcanzaban al preingreso (ese atributo solo estaba en la sala), el prefab restauraba silenciosamente flags/dispositivos persistidos, y `LiveKitRoom` recibía únicamente booleanos, descartando los identificadores elegidos. La validación anterior del botón dependía del nombre local, mientras que el estado `busy` no deshabilitaba el botón del prefab. La identidad de sala real sigue siendo validada por el backend.
+
+La corrección usa controles propios de preingreso y las APIs locales del SDK existente. Los callbacks/objetos que controlan la conexión son estables; los errores de captura no reinician medios por render. No se agregaron dependencias, endpoints, migraciones ni cambios de autenticación/roles/Google. Los errores no muestran mensajes internos del navegador ni tokens. La interfaz tiene botones de al menos 48 px, foco visible, texto/iconos explícitos y estados disabled sin opacidad excesiva; se conserva Detalles de la consulta.
+
+Validación de esta corrección:
+
+- **64 pruebas frontend aprobadas**: captura independiente, errores y reintento, origen inseguro, fallback de restricciones, cambio de cámara/micrófono, audio solo, dispositivo desconectado, inventario fallido, adquisiciones tardías, limpieza y traslado de preferencias a la sala.
+- **12 pruebas E2E de preingreso aprobadas**, en escritorio y móvil: frames de video sintético estables a través de tres renders del reloj, ausencia de reinicios, errores inyectados `NotAllowedError` / `NotFoundError` / `NotReadableError` con recuperación, cambio de dispositivo y limpieza al navegar, foco/contraste de texto mínimo 4,5:1 y ausencia de token antes de ingresar. La denegación/ocupación se simula en `getUserMedia`; no se cambian permisos reales del sistema.
+- **50 pruebas backend pertinentes aprobadas**: `test_livekit_consultations.py`, `test_doctor_portal.py`, `test_demo_livekit.py`, `test_google_auth.py`, en una base aislada `vitalsync_test_audit_preview_*`.
+- **E2E Google controlado + LiveKit aprobado**, en Docker y otra base aislada: prepara medios en ambos roles, ingresa paciente solo con audio, activa cámara dentro, silencia/restaura micrófono, apaga/restaura cámara remota, comprueba frames y pistas de audio recibidas, sale/reingresa, reconecta y finaliza con historial y proyección administrativa. No equivale a una prueba audible ni con hardware físico.
+- **Compilación React aprobada**; permanece el aviso existente de chunks mayores de 500 kB.
+- **Docker actualizado y comprobado**: frontend, backend y PostgreSQL saludables; LiveKit en ejecución. Las 12 pruebas de preingreso se repitieron contra el frontend compilado servido por Docker y también aprobaron. Los hashes agregados de usuarios, pacientes, citas y pagos coinciden antes/después del despliegue (61 usuarios, 55 pacientes, 67 citas y 148 pagos en ese momento). Se conserva `vitalsync_vitalsync_data` y la cabeza Alembic existente; no hubo cambios en la base principal.
+
+Para repetir la prueba del preingreso contra Docker (las API son fixtures del navegador y no escriben datos principales):
+
+```powershell
+cd frontend
+npm run test:e2e -- prejoin.spec.ts --output test-results-prejoin
+```
+
+La prueba multimedia con dos participantes se repite con `infrastructure/test-livekit.ps1 -GoogleProviderFixture`. Las dos ejecuciones Playwright se realizan secuencialmente.
+
+### Comprobación manual con webcam física en Chrome
+
+1. Recarga `http://localhost:5188/login` con Ctrl+F5 e inicia sesión como paciente. En Mis citas abre una cita virtual autorizada o una consulta académica de prueba.
+2. En Antes de ingresar pulsa **Activar cámara** y permite su uso en el diálogo de Chrome. Debe aparecer tu imagen y el estado Cámara activa, sin desconexiones periódicas. Activa el micrófono, habla y comprueba el medidor.
+3. Cambia cámara/micrófono en las listas. Comprueba que la imagen cambia y que apagar cámara conserva la posibilidad de entrar con audio. Si Chrome denegó el permiso, abre los controles del sitio junto a la dirección, cambia cámara/micrófono a Permitir y pulsa Reintentar; si el navegador lo exige, recarga la página.
+4. En otro perfil de Chrome, ventana privada o equipo inicia como médico y abre la misma cita desde Mi agenda. Repite la preparación y entra. Si una webcam no admite acceso simultáneo desde dos sesiones, usa otro equipo/cámara o deja una sesión solo con audio; el mensaje de dispositivo ocupado no implica un fallo de permisos o backend.
+5. Comprueba imagen/audio de ambos lados, controles, selección de dispositivos en sala, Salir y reingreso. Finalizar consulta solo lo confirma el médico y deja la cita en historial.
+
+Pendiente manual: permisos reales de Chrome/Windows, webcam(s) físicas, cambio entre dos cámaras físicas, calidad audible y redes distintas. Esta entrega valida únicamente medios sintéticos y errores controlados. Ninguna captura contiene imagen de cámara física ni se graba audio/video.
+
+Las pruebas de la ruta académica cubren los cinco médicos, citas sin plan ni pago, repetición idempotente, bloqueo a pacientes normales y rechazo de un médico ocupado. Las pruebas de migración verifican una única cabeza Alembic. El E2E de medios inicia la prueba desde **Mis citas**, confirma que el médico ve la etiqueta académica en su agenda y conecta ambas cuentas usando medios sintéticos por defecto; después verifica finalización formal e historial.
 
 Backend: `.\infrastructure\Test-Backend.ps1` crea una base de pruebas aislada con prefijo `vitalsync_test_audit_`; las pruebas no usan ni truncan la base `vitalsync`.
 
@@ -103,9 +145,13 @@ El script crea otra base temporal aislada, emite credenciales de fixture a una c
 
 ## Capturas
 
-El E2E local completó la preparación, conexión de dos participantes, publicación y recepción de video/audio, reconexión tras recargar el portal médico y finalización. Las capturas siguientes se generaron con medios sintéticos reproducibles; la prueba con dispositivos físicos pasó sin generar capturas.
+El E2E local completó la preparación, conexión de dos participantes, publicación y recepción de video/audio, reconexión tras recargar el portal médico y finalización. Las capturas siguientes se generaron con medios sintéticos reproducibles. En la corrección de preingreso del 20 de noviembre no se probaron dispositivos físicos.
 
 ![Preparación de cámara y micrófono antes de ingresar](screenshots/livekit-prejoin-desktop.png)
+
+![Vista previa estable y controles legibles en escritorio](screenshots/prejoin-desktop.png)
+
+![Vista previa estable en móvil](screenshots/prejoin-mobile.png)
 
 ![Sala LiveKit VitalSync en escritorio](screenshots/livekit-room-desktop.png)
 
