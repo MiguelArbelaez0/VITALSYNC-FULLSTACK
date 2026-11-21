@@ -47,15 +47,13 @@ def reauthenticate(user, password):
         raise HTTPException(403, 'Confirma tu contraseña actual para continuar')
 
 def account(db, user):
-    if not user or user.status != 'ACTIVE' or user.role not in {'PATIENT', 'DOCTOR'}:
-        raise HTTPException(403, 'Esta cuenta no admite acceso con Google')
-    if user.role == 'DOCTOR':
-        doctor_for_user(db, user)
-    elif not db.get(Patient, user.id):
+    if not user or user.status != 'ACTIVE' or user.role != 'PATIENT':
+        raise HTTPException(403, 'Google está disponible únicamente para pacientes. Los médicos y administradores deben usar su correo asignado y contraseña.')
+    if not db.get(Patient, user.id):
         raise HTTPException(403, 'El perfil de paciente no está disponible')
 
 def result(user):
-    return {'id': user.id, 'role': user.role, 'redirect_to': '/doctor' if user.role == 'DOCTOR' else '/portal'}
+    return {'id': user.id, 'role': user.role, 'redirect_to': '/portal'}
 
 def verify_credential(credential, nonce):
     if not GOOGLE_CLIENT_ID:
@@ -135,7 +133,9 @@ def exchange(data: CredentialInput, request: Request, response: Response, db: Se
         create_session(db, user, response)
         db.add(AuditEvent(actor_id=user.id, action='GOOGLE_LOGIN', entity_id=user.id))
         return result(user)
-    if db.scalar(select(User.id).where(func.lower(User.email) == claims['email'].lower())):
+    existing_user = db.scalar(select(User).where(func.lower(User.email) == claims['email'].lower()))
+    if existing_user:
+        account(db, existing_user)
         raise HTTPException(409, 'Si ya tienes una cuenta, inicia sesión con contraseña y vincula Google desde tu perfil. No se fusionan cuentas por correo.')
     row.purpose = 'REGISTER'
     row.sub = claims['sub']
@@ -154,7 +154,10 @@ def register(data: RegistrationInput, request: Request, response: Response, db: 
             document_number=data.document_number, phone=data.phone, privacy_accepted=data.privacy_accepted)
     except ValidationError:
         raise HTTPException(422, 'Revisa la cédula colombiana (6 a 10 dígitos) y el teléfono (7 a 15 dígitos)') from None
-    if (db.scalar(select(User.id).where(func.lower(User.email) == row.email))
+    from app.services.medical_registration import reserved_email
+    from sqlalchemy import text
+    db.execute(text('SELECT pg_advisory_xact_lock(861993)'))
+    if (reserved_email(db, row.email) or db.scalar(select(User.id).where(func.lower(User.email) == row.email))
         or db.get(GoogleIdentity, row.sub)
         or db.scalar(select(Patient.id).where(Patient.document_type == 'CC', Patient.document_number == data.document_number))):
         raise HTTPException(409, 'No pudimos crear la cuenta con esos datos. Si ya tienes cuenta, inicia sesión.')

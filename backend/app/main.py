@@ -20,12 +20,14 @@ from app.routers.doctor import router as doctor_router
 from app.routers.admin import router as admin_router
 from app.routers.recovery import router as recovery_router
 from app.routers.google_auth import router as google_router
+from app.routers.medical_registration import router as medical_registration_router
 
 app = FastAPI(title='VITALSYNC · Portales integrados', version='1.1.0')
 app.include_router(doctor_router)
 app.include_router(admin_router)
 app.include_router(recovery_router)
 app.include_router(google_router)
+app.include_router(medical_registration_router)
 PRIVACY_NOTICE_VERSION = 'VITALSYNC-PRIVACIDAD-2026-11-v1'
 
 @app.middleware('http')
@@ -90,7 +92,7 @@ def profile_dict(db, u):
         email=u.email,
         role=u.role,
         doctor_id=doctor_for_user(db, u).id if u.role == 'DOCTOR' else None,
-        must_change_password=bool(not DEMO_MODE and db.get(DoctorCredentialState,u.id) and db.get(DoctorCredentialState,u.id).must_change_password) if u.role=='DOCTOR' else False,
+        must_change_password=False,
         phone=p.phone if p else '',
         document_type=p.document_type if p else None,
         document_masked=('•' * max(0, len(number) - 4) + number[-4:]) if number else None,
@@ -105,6 +107,10 @@ def profile_dict(db, u):
 @app.post('/api/auth/register', status_code=201)
 def register(data: Register, response: Response, db: Session = Depends(get_db, scope='function')):
     email = data.email.lower()
+    from app.services.medical_registration import reserved_email
+    db.execute(text('SELECT pg_advisory_xact_lock(861993)'))
+    if reserved_email(db, email):
+        raise HTTPException(409, 'Este correo está reservado para una solicitud médica. Usa tu correo personal.')
     if db.scalar(select(User.id).where(func.lower(User.email) == email)) or db.scalar(
         select(Patient.id).where(
             Patient.document_type == data.document_type,

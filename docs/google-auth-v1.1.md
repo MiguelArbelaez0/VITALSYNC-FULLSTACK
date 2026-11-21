@@ -20,12 +20,12 @@ Referencias oficiales: [configurar el cliente](https://developers.google.com/ide
 
 ## Flujos
 
-El login es compartido. Google entrega una identidad; PostgreSQL determina el usuario y rol. La respuesta backend contiene `/portal` o `/doctor`. No se conceden permisos por correo, dominio ni datos enviados por React. Las cuentas administrativas continúan con contraseña y no admiten vinculación Google.
+El login es compartido. Google entrega una identidad; PostgreSQL determina el usuario y rol. La respuesta Google contiene únicamente `/portal`. No se conceden permisos por correo, dominio ni datos enviados por React. Las cuentas médicas y administrativas continúan exclusivamente con contraseña y no admiten Google. Consulta la política vigente en [registro unificado](auth-registration-v1.1.md).
 
 - **Paciente nuevo:** Google verifica nombre/correo; el formulario solicita CC colombiana de 6–10 dígitos, teléfono y consentimiento. Se aplican las validaciones tradicionales y restricciones únicas PostgreSQL. Se crea únicamente un paciente con identidad Google vinculada. La cuenta recibe un hash de contraseña aleatoria no conocida; puede establecer una contraseña por la recuperación privada existente, sin inventar una contraseña compartida.
 - **Cuenta existente sin vincular:** una coincidencia de correo produce una indicación de iniciar sesión con contraseña y vincular desde el perfil. No se crea una cuenta duplicada ni se fusiona por correo.
-- **Vinculación de paciente/médico:** desde Mi perfil, confirmar la contraseña actual y luego la identidad Google. La solicitud dura cinco minutos y está vinculada al usuario y a la sesión exacta que confirmó la contraseña. El correo institucional, hash de contraseña y datos profesionales no cambian.
-- **Acceso vinculado:** se busca el `sub` único y se emite la misma cookie de sesión local que usa el login tradicional. Un médico debe conservar perfil profesional activo; un usuario deshabilitado no accede.
+- **Vinculación de paciente:** desde Mi perfil, confirmar la contraseña actual y luego la identidad Google. La solicitud dura cinco minutos y está vinculada al usuario y a la sesión exacta que confirmó la contraseña. El correo institucional, hash de contraseña y datos profesionales no cambian.
+- **Acceso vinculado:** se busca el `sub` único y se emite la misma cookie de sesión local que usa el login tradicional. El usuario debe ser PATIENT, tener perfil de paciente y estar activo; un médico o administrador es rechazado aunque conserve una identidad Google antigua.
 - **Desvinculación propia:** requiere contraseña; revoca Google, solicitudes pendientes y demás sesiones. Para cuentas creadas solo con Google, establecer primero una contraseña mediante recuperación.
 - **Revocación administrativa:** en Pacientes o Médicos, `Revocar Google` requiere permiso `accounts`, contraseña actual del administrador y motivo. Revoca la identidad, solicitudes pendientes y todas las sesiones del usuario; queda registrada en auditoría. No reemplaza la contraseña del titular.
 
@@ -67,14 +67,14 @@ El flujo vincula paciente y médico desde sus perfiles tras confirmar contraseñ
 
 ## Validación manual pendiente con Google real
 
-Con un Client ID autorizado y cuentas reales, comprobar popup, consentimiento, selección de cuenta, rechazo de permisos, usuario nuevo, coincidencia de correo sin vincular, vinculación de médico, login posterior, revocación y sesión en móvil. Validar HTTPS y cookies seguras en el dominio final. No se afirma que estos pasos reales se hayan ejecutado sin esa evidencia.
+Con un Client ID autorizado y cuentas reales, comprobar popup, consentimiento, selección de cuenta, rechazo de permisos, usuario nuevo, coincidencia de correo sin vincular, rechazo de Google para médico y administrador, login posterior de paciente, revocación y sesión en móvil. Validar HTTPS y cookies seguras en el dominio final. No se afirma que estos pasos reales se hayan ejecutado sin esa evidencia.
 
 LiveKit conserva los mismos endpoints, ventanas horarias, permisos por rol y ciclo de atención. El administrador no recibe acceso a la sala ni a historias clínicas.
 
 ## Comprobación local del 20 de noviembre de 2026
 
 - Backend: **182 aprobadas**. Frontend: **50 aprobadas**. Compilación React de producción: aprobada; conserva el aviso de tamaño de algunos chunks.
-- E2E con proveedor Google controlado: aprobado. Vinculación de paciente y médico con contraseña, login Google según rol, rechazo del médico sin vincular, conexión LiveKit, salida/reingreso y finalización con historial.
+- E2E con proveedor Google controlado: aprobado. Resultado histórico anterior al cambio de política: vinculaciones según los roles entonces permitidos. La validación vigente exige Google solo para pacientes y rechazo médico, conexión LiveKit, salida/reingreso y finalización con historial.
 - Docker actualizado: `vitalsync` con `db`, `backend`, `frontend` y `livekit`. Se conserva `vitalsync_vitalsync_data`.
 - Alembic: única cabeza `20261123_google_identity`, aplicada a la base principal.
 - Conservación de datos: los contenidos completos de `users`, `patients`, `appointments` y `payments` producen los mismos hashes agregados antes/después de migrar: **61 usuarios, 55 pacientes, 63 citas y 147 pagos**. No se reemplazaron contraseñas ni registros existentes.
@@ -96,10 +96,10 @@ Capturas del SDK oficial cargado (no demuestran autenticación real): [escritori
 
 ## Cómo probar paciente y médico
 
-Abre `http://localhost:5188/login` y utiliza cuentas Google distintas para paciente y médico: cada identidad `sub` se puede vincular a un solo usuario VITALSYNC.
+Abre `http://localhost:5188/login`. Google está disponible únicamente para pacientes; cada identidad `sub` se vincula a un solo paciente VITALSYNC.
 
 1. **Paciente existente:** inicia con su correo y contraseña habituales; abre `http://localhost:5188/portal/profile`. En Acceso con Google confirma la contraseña y pulsa el botón Google. Selecciona la cuenta personal y espera la confirmación de vinculación. Cierra sesión; vuelve al login, pulsa Continuar con Google y selecciona esa misma cuenta. Debe abrir `/portal`.
 2. **Paciente nuevo:** desde el login pulsa Continuar con Google con una cuenta aún no vinculada ni coincidente con un usuario existente. Completa CC, teléfono y privacidad. Se crea únicamente una cuenta de paciente y abre `/portal`.
-3. **Médico:** inicia con su correo institucional y contraseña actuales; abre `http://localhost:5188/doctor/profile`. Confirma la contraseña en Acceso con Google y selecciona una cuenta Google real que no esté vinculada a otro usuario. Al confirmar, cierra sesión y entra desde el login con esa misma cuenta Google. Debe abrir `/doctor` conservando especialidad, citas y permisos.
+3. **Médico:** inicia con su correo asignado y contraseña individual. Debe abrir `/doctor` conservando especialidad, citas y permisos. El perfil no ofrece Google ni cambio de contraseña; las API rechazan Google incluso si existe una vinculación médica histórica. Para restablecer acceso, solicitar asistencia administrativa.
 
 Si el correo Google coincide con una cuenta existente, hay que vincular desde la sesión con contraseña; el sistema no fusiona por correo. Una cuenta Google sin vincular jamás adquiere el rol médico. El administrador conserva su inicio con contraseña.

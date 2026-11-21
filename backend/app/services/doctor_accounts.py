@@ -2,7 +2,7 @@
 import secrets
 import re
 import unicodedata
-from sqlalchemy import select, text, func
+from sqlalchemy import select, text, func, inspect
 from app.models.entities import Doctor, DoctorAccount, DoctorCredentialState, User, AuditEvent
 from app.core.security import passwords
 
@@ -25,12 +25,15 @@ def _doctor_email_name(name, doctor_id):
 
 
 def available_doctor_email(db, name, doctor_id, domain='doctor.vitalsync.demo'):
+    from app.models.entities import DoctorApplication
+    db.execute(text('SELECT pg_advisory_xact_lock(861993)'))
     base = _doctor_email_name(name, doctor_id)
     suffix = 0
     while True:
         local = base if suffix == 0 else f'{base}.{doctor_id}' + (f'.{suffix}' if suffix > 1 else '')
         email = f'{local}@{domain.lower()}'
-        if not db.scalar(select(User.id).where(func.lower(User.email) == email.lower())):
+        reserved = inspect(db.connection()).has_table('doctor_applications') and db.scalar(select(DoctorApplication.id).where(DoctorApplication.institutional_email == email.lower()))
+        if not reserved and not db.scalar(select(User.id).where(func.lower(User.email) == email.lower())):
             return email
         suffix += 1
 
@@ -55,7 +58,7 @@ def provision(db, actor, domain='doctor.vitalsync.demo'):
         user = User(email=email,name=doctor.name,role='DOCTOR',status='ACTIVE' if doctor.enabled else 'DISABLED',password_hash=passwords.hash(secret))
         db.add(user); db.flush()
         db.add(DoctorAccount(user_id=user.id,doctor_id=doctor.id)); db.flush()
-        db.add(DoctorCredentialState(user_id=user.id,must_change_password=True))
+        db.add(DoctorCredentialState(user_id=user.id,must_change_password=False))
         db.add(AuditEvent(actor_id=actor.id,action='DOCTOR_ACCOUNT_PROVISIONED',entity_id=doctor.id))
         created.append(dict(doctor_id=doctor.id,user_id=user.id,name=doctor.name,email=email,temporary_password=secret,enabled=doctor.enabled))
     db.flush()

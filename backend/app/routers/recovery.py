@@ -15,8 +15,7 @@ def recover(data:RecoveryInput,db:Session=Depends(get_db,scope='function')):
     user=db.scalar(select(User).where(User.id==grant.user_id).with_for_update())
     if not user or user.status!='ACTIVE':fail('El enlace no está disponible o ha vencido. Solicita una nueva recuperación.',400)
     if user.role=='DOCTOR':
-        doctor=db.scalar(select(Doctor).join(DoctorAccount,DoctorAccount.doctor_id==Doctor.id).where(DoctorAccount.user_id==user.id,Doctor.enabled))
-        if not doctor:fail('La cuenta profesional no está habilitada',403)
+        fail('La recuperación médica se gestiona por administración mediante una nueva credencial privada.',403)
     user.password_hash=passwords.hash(data.new_password)
     state=db.get(DoctorCredentialState,user.id)
     if state:state.must_change_password=False;state.changed_at=now()

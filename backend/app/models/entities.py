@@ -64,6 +64,47 @@ class GoogleChallenge(Base):
     email = Column(String(254))
     name = Column(String(120))
 
+class DoctorApplication(Base):
+    __tablename__ = 'doctor_applications'
+    id = Column(Integer, primary_key=True)
+    given_names = Column(String(60), nullable=False)
+    surnames = Column(String(60), nullable=False)
+    document_type = Column(String(2), nullable=False, default='CC')
+    document_number = Column(String(10), nullable=False)
+    professional_number = Column(String(50), nullable=False, unique=True)
+    specialty_id = Column(Integer, ForeignKey('specialties.id'), nullable=False)
+    contact_email = Column(String(254))
+    phone = Column(String(30), nullable=False)
+    bio = Column(Text, nullable=False)
+    institutional_email = Column(String(254), nullable=False, unique=True)
+    receipt_hash = Column(String(64), nullable=False, unique=True)
+    status = Column(String(16), nullable=False, default='PENDING')
+    version = Column(Integer, nullable=False, default=1)
+    doctor_id = Column(Integer, ForeignKey('doctors.id'), unique=True)
+    user_id = Column(Integer, ForeignKey('users.id'), unique=True)
+    submitted_at = Column(DateTime(timezone=True), nullable=False, default=now)
+    reviewed_at = Column(DateTime(timezone=True))
+    reviewed_by = Column(Integer, ForeignKey('users.id'))
+    review_reason = Column(Text)
+    verification_kind = Column(String(32))
+    __table_args__ = (
+        UniqueConstraint('document_type', 'document_number', name='uq_doctor_applications_document'),
+        CheckConstraint("status IN ('PENDING','APPROVED','REJECTED')", name='ck_doctor_applications_status'),
+        CheckConstraint("document_type = 'CC' AND document_number ~ '^[0-9]{6,10}$'", name='ck_doctor_applications_document'),
+    )
+
+class DoctorCredentialDelivery(Base):
+    __tablename__ = 'doctor_credential_deliveries'
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    actor_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    status = Column(String(16), nullable=False, default='PENDING')
+    encrypted_secret = Column(Text)
+    reason = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=now)
+    delivered_at = Column(DateTime(timezone=True))
+    __table_args__ = (CheckConstraint("status IN ('PENDING','DELIVERED','REVOKED')", name='ck_doctor_delivery_status'),)
+
 class Specialty(Base):
     __tablename__ = 'specialties'
     id = Column(Integer, primary_key=True)

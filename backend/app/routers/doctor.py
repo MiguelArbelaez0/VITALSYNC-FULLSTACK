@@ -158,18 +158,4 @@ def clinical_visit(patient_id: int, encounter_id: int, doctor=Depends(current_do
 
 @router.post('/password')
 def change_password(data: DoctorPasswordChange, request: Request, user=Depends(authenticated_user,scope='function'), db: Session=Depends(get_db,scope='function')):
-    professional=doctor_for_user(db,user)
-    user=db.scalar(select(User).where(User.id==user.id).with_for_update().execution_options(populate_existing=True))
-    if not passwords.verify(data.current_password,user.password_hash):
-        raise HTTPException(400,'La contraseña actual no es correcta')
-    if passwords.verify(data.new_password,user.password_hash):
-        raise HTTPException(422,'Elige una contraseña distinta de la actual')
-    user.password_hash=passwords.hash(data.new_password)
-    state=db.get(DoctorCredentialState,user.id)
-    if state:
-        state.must_change_password=False
-        state.changed_at=now()
-    current_hash=digest(request.cookies.get('vitalsync_session',''))
-    db.execute(delete(SessionToken).where(SessionToken.user_id==user.id,SessionToken.token_hash!=current_hash))
-    db.add(AuditEvent(actor_id=user.id,action='DOCTOR_PASSWORD_CHANGED',entity_id=professional.id))
-    return {'message':'Contraseña actualizada. Las demás sesiones de esta cuenta se cerraron.'}
+    raise HTTPException(403, 'El restablecimiento de credenciales médicas se solicita a administración; no está disponible desde el portal.')

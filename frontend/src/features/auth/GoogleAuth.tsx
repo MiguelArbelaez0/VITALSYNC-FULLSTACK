@@ -41,7 +41,7 @@ export function GoogleSignIn({ password, linking = false, onLinked }: { password
   const navigate = useNavigate();
   async function complete(outcome: Outcome) {
     if (outcome.linked) { onLinked?.(); return; }
-    if (!outcome.redirect_to || !["/portal", "/doctor"].includes(outcome.redirect_to)) throw new Error("No se pudo determinar tu portal.");
+    if (!outcome.redirect_to || outcome.redirect_to !== "/portal") throw new Error("No se pudo determinar tu portal.");
     await refresh();
     navigate(outcome.redirect_to);
   }

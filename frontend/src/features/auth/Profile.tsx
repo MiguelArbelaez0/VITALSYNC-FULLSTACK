@@ -8,6 +8,8 @@ import { ErrorBox, PageTitle } from "../../components/common";
 import { Button } from "../../components/ui/button";
 import { GoogleAccountLink } from "./GoogleAuth";
 
+import { PatientPasswordForm } from "./PatientPassword";
+
 const schema = z.object({
   name: z.string().trim().min(2, "Ingresa tu nombre").max(120),
   phone: z.string().max(30).regex(/^[+\d\s()\-]*$/, "Ingresa un teléfono válido"),
@@ -48,6 +50,7 @@ export function Profile() {
       />
       <section className="panel profile-panel">
         <GoogleAccountLink />
+        <PatientPasswordForm />
         <span className="avatar xlarge">{user?.name[0]}</span>
         <h2>Mi perfil</h2>
         <p>Cuenta de paciente · {user?.email}</p>

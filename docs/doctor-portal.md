@@ -13,11 +13,11 @@ docker compose -p vitalsync up -d --build --wait
 - Médico: http://localhost:5188/doctor
 - API: http://localhost:8088/docs
 
-El login redirige según el rol. Registro público: solamente pacientes. El administrador no dispone de visor clínico. El backend comprueba cuenta activa, rol, vinculación profesional única y perfil habilitado en cada solicitud médica.
+El login redirige según el rol. Registro público: pacientes y solicitudes médicas pendientes de aprobación. La política vigente y la entrega privada están en [registro unificado](auth-registration-v1.1.md). El administrador no dispone de visor clínico. El backend comprueba cuenta activa, rol, vinculación profesional única y perfil habilitado en cada solicitud médica.
 
 ## Cuentas individuales y entrega privada
 
-Existen cinco perfiles profesionales. El aprovisionamiento conserva la vinculación y contraseña de cualquier cuenta existente; crea solamente las pendientes. La contraseña inicial de cada cuenta nueva es aleatoria e individual, con hash Argon2 en PostgreSQL. En modo demostración el médico puede ingresar al portal sin una pantalla obligatoria de cambio de contraseña; fuera de ese modo debe elegir una propia antes de acceder a agenda, pacientes o información clínica. El cambio revoca las demás sesiones y queda auditado.
+Existen cinco perfiles profesionales. El aprovisionamiento conserva la vinculación y contraseña de cualquier cuenta existente; crea solamente las pendientes. La contraseña inicial de cada cuenta nueva es aleatoria e individual, con hash Argon2 en PostgreSQL. El médico ingresa con la contraseña individual asignada, sin cambio obligatorio ni Google. Los restablecimientos se realizan exclusivamente desde administración, con auditoría y revocación de sesiones.
 
 | Perfil | Correo de acceso | Procedencia |
 | --- | --- | --- |
@@ -33,7 +33,7 @@ Comando administrativo para los perfiles actuales o futuros, desde la raíz:
 powershell -NoProfile -ExecutionPolicy Bypass -File infrastructure/Provision-Doctors.ps1
 ```
 
-El script crea una carpeta nueva en el escritorio, `VITALSYNC-CREDENCIALES/<fecha-identificador>/`, con ACL de acceso exclusivo para el usuario de Windows y SYSTEM. Copia `doctores.credentials.json`, verifica SHA256 y retira la copia temporal del contenedor. El JSON privado contiene únicamente las credenciales recién emitidas y los identificadores conservados. Abrirlo localmente y entregar cada acceso a su titular por un canal privado; no adjuntarlo al repositorio ni a reportes. Tras confirmar la entrega y el cambio individual, custodiar o retirar ese archivo según la política local.
+El script crea una carpeta nueva en el escritorio, `VITALSYNC-CREDENCIALES/<fecha-identificador>/`, con ACL de acceso exclusivo para el usuario de Windows y SYSTEM. Copia `doctores.credentials.json`, verifica SHA256 y retira la copia temporal del contenedor. El JSON privado contiene únicamente las credenciales recién emitidas y los identificadores conservados. Abrirlo localmente y entregar cada acceso a su titular por un canal privado; no adjuntarlo al repositorio ni a reportes. Tras confirmar la entrega privada, custodiar o retirar ese archivo según la política local.
 
 Repetir el comando no genera contraseñas para cuentas existentes ni las restablece. Una exportación posterior vacía es normal. No recuperar claves antiguas desde hashes. Un error al copiar conserva el archivo privado temporal del contenedor para recuperación administrativa; no repetir un alta esperando volver a emitir las claves. El comando Python crea su archivo exclusivamente (0600, sin sobrescritura), revierte la transacción si no puede exportar y no imprime secretos.
 

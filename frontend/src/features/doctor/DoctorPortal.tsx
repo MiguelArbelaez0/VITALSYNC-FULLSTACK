@@ -1,5 +1,4 @@
 import { lazy, Suspense, useState, type ReactNode } from "react";
-import { GoogleAccountLink } from "../auth/GoogleAuth";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import {
@@ -39,7 +38,6 @@ import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 import "./doctor.css";
 import "./clinical.css";
-import { DoctorPasswordForm } from "./DoctorPassword";
 const LiveKitConsultation = lazy(() => import("../appointments/LiveKitConsultation").then((module) => ({ default: module.LiveKitConsultation })));
 
 const prefix = "/doctor";
@@ -663,8 +661,7 @@ export function DoctorProfilePage() {
             {busy ? "Guardando…" : "Guardar biografía"}
           </Button>
         </form>
-        <DoctorPasswordForm />
-        <GoogleAccountLink />
+        <div className="notice"><h2>Acceso institucional</h2><p>En esta demostración académica, las credenciales médicas se gestionan por administración. Si necesitas recuperar tu acceso, solicita una nueva contraseña individual al administrador. Google está disponible únicamente para pacientes.</p></div>
       </section>
     </div>
   );

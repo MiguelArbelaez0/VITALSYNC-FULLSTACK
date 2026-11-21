@@ -26,7 +26,6 @@ import {
   DoctorRoom,
 } from "../features/doctor/DoctorPortal";
 import { DoctorClinicalHistory } from "../features/doctor/ClinicalHistory";
-import { DoctorPasswordSetup } from "../features/doctor/DoctorPassword";
 const AdminPortal = lazy(() => import("../features/admin/AdminPortal"));
 const Recover = lazy(() => import("../features/admin/Recover"));
 export function Protected({
@@ -74,8 +73,6 @@ export function Protected({
         }
       />
     );
-  if (role === "DOCTOR" && user.must_change_password)
-    return <DoctorPasswordSetup />;
   return <Outlet />;
 }
 export function App() {

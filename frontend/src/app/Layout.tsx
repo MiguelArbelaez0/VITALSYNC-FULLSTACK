@@ -38,6 +38,8 @@ const doctorNavigation = [
 ];
 const adminNavigation = [
   { to: "/admin", icon: LayoutDashboard, label: "Dashboard", end: true },
+  { to: "/admin/doctor-applications", icon: Stethoscope, label: "Solicitudes médicas" },
+  { to: "/admin/doctor-credential-deliveries", icon: Stethoscope, label: "Entregas privadas" },
   { to: "/admin/doctors", icon: Stethoscope, label: "Médicos" },
   { to: "/admin/patients", icon: Users, label: "Pacientes" },
   { to: "/admin/appointments", icon: CalendarDays, label: "Citas" },

@@ -12,7 +12,7 @@ from app.main import app
 from app.db.session import SessionLocal
 from app.models.entities import GoogleIdentity, User, Patient, now
 from app.routers import google_auth as google
-from conftest import PATIENT_TEST_PASSWORD, ADMIN_TEST_PASSWORD
+from conftest import PATIENT_TEST_PASSWORD, ADMIN_TEST_PASSWORD, register_patient
 from test_livekit_consultations import doctor_client
 
 ORIGIN = {'Origin': 'http://localhost:5188'}
@@ -91,30 +91,33 @@ def test_existing_email_requires_password_link_and_duplicate_sub_rejected(patien
     doctor, _, _ = doctor_client()
     try:
         from test_livekit_consultations import DOCTOR_PASSWORD
-        nonce = challenge(doctor, 'LINK', DOCTOR_PASSWORD)
-        assert exchange(doctor, nonce, provider(nonce)).status_code == 409
+        assert doctor.post('/api/auth/google/challenge', headers=ORIGIN, json={'purpose': 'LINK', 'current_password': DOCTOR_PASSWORD}).status_code == 403
     finally: doctor.close()
 
-def test_doctor_link_login_role_and_admin_revocation(client, provider):
+    with TestClient(app) as other:
+        password='OtroPacienteSeguro123!'
+        assert register_patient(other,'Otro Paciente','other-google@example.com',password).status_code==201
+        nonce=challenge(other,'LINK',password)
+        assert exchange(other,nonce,provider(nonce)).status_code==409
+
+def test_doctor_google_denied_existing_identity_preserved(client, provider):
     from test_livekit_consultations import DOCTOR_PASSWORD
     doctor, user_id, _ = doctor_client()
     try:
-        nonce = challenge(doctor, 'LINK', DOCTOR_PASSWORD)
-        linked = exchange(doctor, nonce, provider(nonce, sub='doctor-sub', email='personal-doctor@gmail.com'))
-        assert linked.status_code == 200, linked.text
-        doctor.post('/api/auth/logout')
+        assert doctor.post('/api/auth/google/challenge', headers=ORIGIN, json={'purpose':'LINK','current_password':DOCTOR_PASSWORD}).status_code == 403
+        with SessionLocal.begin() as db:
+            db.add(GoogleIdentity(sub='doctor-sub', user_id=user_id, email='personal-doctor@gmail.com'))
         nonce = challenge(doctor)
-        response = exchange(doctor, nonce, provider(nonce, sub='doctor-sub'))
-        assert response.json()['role'] == 'DOCTOR' and response.json()['redirect_to'] == '/doctor'
+        assert exchange(doctor, nonce, provider(nonce, sub='doctor-sub')).status_code == 403
         assert doctor.get('/api/doctor/dashboard').status_code == 200
         assert doctor.get('/api/appointments').status_code == 403
-        assert client.post('/api/auth/login', json={'email': 'admin@vitalsync.demo', 'password': ADMIN_TEST_PASSWORD}).status_code == 200
-        assert client.post('/api/auth/google/challenge', headers=ORIGIN, json={'purpose': 'LINK', 'current_password': ADMIN_TEST_PASSWORD}).status_code == 403
-        revoked = client.post(f'/api/admin/users/{user_id}/google-revoke', headers=ORIGIN, json={'current_password': ADMIN_TEST_PASSWORD, 'reason': 'Revocación de prueba por compromiso de identidad'})
-        assert revoked.status_code == 200, revoked.text
-        assert doctor.get('/api/doctor/dashboard').status_code == 401
-        with SessionLocal() as db: assert db.get(GoogleIdentity, 'doctor-sub') is None
+        with SessionLocal() as db: assert db.get(GoogleIdentity, 'doctor-sub') is not None
+        assert client.post('/api/auth/login', json={'email':'admin@vitalsync.demo','password':ADMIN_TEST_PASSWORD}).status_code == 200
+        assert client.post('/api/auth/google/challenge', headers=ORIGIN, json={'purpose':'LINK','current_password':ADMIN_TEST_PASSWORD}).status_code == 403
+        nonce = challenge(client)
+        assert exchange(client, nonce, provider(nonce, email='admin@vitalsync.demo')).status_code == 403
     finally: doctor.close()
+
 
 def test_link_challenge_is_bound_to_authenticated_session(patient, provider):
     nonce = challenge(patient, 'LINK', PATIENT_TEST_PASSWORD)

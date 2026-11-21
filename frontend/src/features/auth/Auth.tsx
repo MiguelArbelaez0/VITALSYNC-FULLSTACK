@@ -10,6 +10,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { Button } from "../../components/ui/button";
 import { ErrorBox, Logo } from "../../components/common";
 import { GoogleSignIn } from "./GoogleAuth";
+import { MedicalRegistration } from "./MedicalRegistration";
 
 const authFields = z.object({
   email: z.email("Ingresa un correo válido"),
@@ -78,6 +79,7 @@ export function Auth({ register = false }: { register?: boolean }) {
   const [error, setError] = useState<unknown>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [registrationRole, setRegistrationRole] = useState<"PATIENT" | "DOCTOR">("PATIENT");
   const {
     register: field,
     handleSubmit,
@@ -169,7 +171,7 @@ export function Auth({ register = false }: { register?: boolean }) {
             </button>
             <button
               type="button"
-              aria-label="Mostrar registro de paciente"
+              aria-label="Mostrar registro"
               aria-pressed={isRegister}
               onClick={() => setSearchParams({ mode: "register" })}
             >
@@ -178,7 +180,7 @@ export function Auth({ register = false }: { register?: boolean }) {
           </div>
           <h1>
             {isRegister
-              ? "Crea tu cuenta de paciente"
+              ? registrationRole === "DOCTOR" ? "Solicita tu cuenta médica" : "Crea tu cuenta de paciente"
               : "Qué bueno verte de nuevo"}
           </h1>
           <p>
@@ -186,18 +188,12 @@ export function Auth({ register = false }: { register?: boolean }) {
               ? "Regístrate de forma independiente. No necesitas una cuenta de demostración."
               : "Ingresa a tu cuenta y continúa cuidando de ti."}
           </p>
-          {isRegister && (
-            <div className="notice auth-role-note">
-              <strong>Registro seguro</strong>
-              <p>
-                Este formulario crea únicamente cuentas de paciente. Las
-                cuentas médicas se autorizan desde administración; no es
-                posible obtener esos permisos usando un correo especial.
-              </p>
-            </div>
-          )}
-          {!isRegister && <GoogleSignIn />}
-          <form
+          {isRegister && <fieldset><legend>¿Qué tipo de cuenta deseas crear?</legend><div className="auth-mode-switch">
+            <button type="button" aria-pressed={registrationRole === "PATIENT"} onClick={() => setRegistrationRole("PATIENT")}>Paciente</button>
+            <button type="button" aria-pressed={registrationRole === "DOCTOR"} onClick={() => setRegistrationRole("DOCTOR")}>Médico</button>
+          </div></fieldset>}
+          {(!isRegister || registrationRole === "PATIENT") && <><p>Continuar con Google — Solo pacientes</p><GoogleSignIn /></>}
+          {isRegister && registrationRole === "DOCTOR" ? <MedicalRegistration /> : <form
             className={isRegister ? "registration-form" : undefined}
             onSubmit={handleSubmit(submit)}
             noValidate
@@ -480,7 +476,7 @@ export function Auth({ register = false }: { register?: boolean }) {
                   ? "Crear mi cuenta"
                   : "Iniciar sesión"}
             </Button>
-          </form>
+          </form>}
           {!isRegister && (
             <p className="auth-recovery">
               <Link to="/recover">¿Necesitas recuperar el acceso?</Link>

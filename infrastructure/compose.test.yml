@@ -6,6 +6,7 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-vitalsync}:${POSTGRES_PASSWORD:-local_demo_change_me}@db:5432/${VITALSYNC_TEST_DATABASE_NAME:-vitalsync_test}
       VITALSYNC_TEST_DATABASE_NAME: ${VITALSYNC_TEST_DATABASE_NAME:-vitalsync_test}
       DEMO_MODE: "true"
+      DOCTOR_CREDENTIAL_KEY: ${DOCTOR_CREDENTIAL_KEY:-}
       COOKIE_SECURE: "false"
       ALLOWED_ORIGINS: http://localhost:5289
     ports: ["127.0.0.1:8189:8000"]

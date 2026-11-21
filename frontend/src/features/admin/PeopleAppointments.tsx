@@ -65,11 +65,11 @@ export function PeopleAppointments({ c }: { c: Context }) {
                     account(c, r),
                   )}
                   {button(
-                    "Recuperar acceso",
-                    () => recovery(c, r),
+                    "Restablecer credenciales",
+                    () => open({title: "Restablecer credenciales médicas", path: `/accounts/${r.user_id}/doctor-credentials`, fields: [{key: "current_password", label: "Tu contraseña administrativa", type: "password"}], confirm: true, description: "Verifica la identidad del profesional. Se revoca la contraseña anterior y sus sesiones; una nueva contraseña individual queda pendiente de entrega privada."}),
                     !r.user_id || !r.enabled,
                   )}
-                  {button("Revocar Google", () => revokeGoogle(c, r), !r.user_id)}
+
                 </>
               )}
             </>

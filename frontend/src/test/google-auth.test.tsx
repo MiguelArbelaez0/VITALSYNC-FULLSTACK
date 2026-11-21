@@ -20,11 +20,11 @@ describe("Google unified authentication", () => {
   it("renders the official button and follows the server portal after exchange", async () => {
     const fetch = vi.fn(async (input: RequestInfo | URL) => response(String(input).endsWith("challenge")
       ? { challenge: "a".repeat(43), nonce: "a".repeat(43), client_id: "controlled-client.apps.googleusercontent.com" }
-      : { redirect_to: "/doctor", role: "DOCTOR" }));
+      : { redirect_to: "/portal", role: "PATIENT" }));
     vi.stubGlobal("fetch", fetch);
     mount(<GoogleSignIn />);
     fireEvent.click(await screen.findByRole("button", { name: "Continuar con Google" }));
-    expect(await screen.findByRole("heading", { name: "Portal médico" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Portal paciente" })).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith("/api/auth/google/exchange", expect.objectContaining({ method: "POST" }));
   });
   it("requires identity and privacy details before completing a new patient", async () => {
@@ -53,7 +53,7 @@ describe("Google unified authentication", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("vincula Google desde tu perfil");
     expect(screen.getByRole("button", { name: "Reintentar verificación" })).toBeInTheDocument();
   });
-  it("requires current password before requesting a medical link challenge", async () => {
+  it("requires current password before requesting a patient link challenge", async () => {
     const fetch = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("identity")
       ? response({ linked: false, enabled: true, email: null })
       : response({ detail: "Confirma tu contraseña actual para continuar" }, 403));

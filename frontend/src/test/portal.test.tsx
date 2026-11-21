@@ -86,10 +86,10 @@ describe("Autenticación y acceso", () => {
       "/auth",
     );
     expect(screen.getByRole("button", { name: "Mostrar inicio de sesión" })).toHaveAttribute("aria-pressed", "true");
-    await userEvent.click(screen.getByRole("button", { name: "Mostrar registro de paciente" }));
+    await userEvent.click(screen.getByRole("button", { name: "Mostrar registro" }));
     expect(await screen.findByPlaceholderText("Tus nombres")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Mostrar registro de paciente" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText(/Este formulario crea únicamente cuentas de paciente/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mostrar registro" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("¿Qué tipo de cuenta deseas crear?")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Crear mi cuenta" }));
     expect(await screen.findByText("Ingresa tus nombres")).toBeInTheDocument();
   });

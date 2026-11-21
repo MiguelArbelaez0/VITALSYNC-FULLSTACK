@@ -40,7 +40,7 @@ Todos los puertos publicados se vinculan exclusivamente a `127.0.0.1`. Se compro
 
 ## Qué puedes hacer
 
-- Landing, registro público e independiente exclusivo de pacientes, login por correo y contraseña, logout, sesión persistente y rutas protegidas.
+- Landing, registro público de pacientes y solicitudes médicas pendientes de aprobación, login por correo y contraseña, logout, sesión persistente y rutas protegidas.
 - Dashboard con plan, vencimiento, próxima cita, conteo de próximas y notificaciones reales.
 - Consultar y actualizar nombre y teléfono del perfil; las cuentas históricas pueden añadir una cédula desde Mi perfil.
 - Ver planes Básico, Estándar y Premium; activar, renovar, cambiar cobertura y cancelar el plan activo mediante pago simulado y una acción común para cualquier identificador de plan.
@@ -256,7 +256,9 @@ La implementación médica comparte la aplicación y las sesiones existentes. Pa
 docker compose -p vitalsync up -d --build --wait
 ```
 
-Con `DEMO_MODE=true`, el seed vincula `medico@vitalsync.demo` al Dr. Alejandro Méndez sin duplicar profesionales ni sobrescribir contraseñas. Todos inician sesión desde `/auth`; el backend identifica el rol y la aplicación dirige al médico a `/doctor`, al administrador a `/admin` y al paciente a `/portal`. `/login` y `/register` siguen funcionando como enlaces compatibles. El registro público crea únicamente pacientes y admite correos personales válidos. Las cuentas médicas nuevas se crean desde **Administración → Médicos**, con el formato `nombre.apellido@doctor.vitalsync.demo`; si hay una coincidencia se añade un identificador estable. Las cuentas previas mantienen su correo y contraseña. En modo demostración, el médico entra sin cambio de contraseña obligatorio; fuera de demo se conserva esa protección. Para recuperación, usa el enlace disponible en `/auth`; las solicitudes administrativas siguen el flujo privado documentado.
+El login compartido dirige al paciente a `/portal`, al médico a `/doctor` y al administrador a `/admin`. El registro permite elegir Paciente o Médico: el paciente crea su cuenta; el médico presenta una solicitud pendiente, con correo institucional generado, que exige aprobación administrativa y entrega privada de una contraseña individual. Google queda disponible únicamente para pacientes. Las cuentas y contraseñas existentes se conservan; el médico no cambia su contraseña desde el portal y solicita restablecimiento a administración.
+
+Consulta el [registro unificado, aprobación médica y entrega segura de credenciales](docs/auth-registration-v1.1.md). Antes de usar aprobaciones nuevas, ejecutar `.\infrastructure\Configure-DoctorCredentials.ps1` y reconstruir el backend.
 
 Consulta [arquitectura, rutas, migración, pruebas y acceso local del portal médico](docs/doctor-portal.md).
 

@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createSign } from "node:crypto";
 
-test("LiveKit real media connects patient and assigned doctor and records explicit finalization", async ({ page, browser }, info) => {
+import { registerApprovedDoctor, bookRegisteredDoctor } from "./medical-registration-flow";
+
+for (const registered of [false, true]) {
+test(`LiveKit real media ${registered ? "new approved registration" : "existing accounts"} connects patient and assigned doctor and records explicit finalization`, async ({ page, browser }, info) => {
   test.setTimeout(180000);
   test.skip(process.env.E2E_LIVEKIT_REAL !== "true", "Requiere LiveKit local y una base aislada de pruebas");
   const credentials = JSON.parse(readFileSync(process.env.E2E_CREDENTIALS_FILE!, "utf8"));
@@ -36,7 +39,7 @@ test("LiveKit real media connects patient and assigned doctor and records explic
   }
   if (process.env.E2E_GOOGLE_FIXTURE === "true") {
     await installGoogleFixture(page, "e2e-google-doctor", "personal-doctor@example.com");
-    await installGoogleFixture(patientPage, "e2e-google-patient", "personal-patient@example.com");
+    await installGoogleFixture(patientPage, `e2e-google-patient-${registered}`, `personal-patient-${registered}@example.com`);
   }
   async function linkAndSignInWithGoogle(targetPage: typeof page, role: "doctor" | "portal", password: string) {
     await targetPage.goto(`/${role}/profile`);
@@ -60,6 +63,7 @@ test("LiveKit real media connects patient and assigned doctor and records explic
   }
   await page.context().grantPermissions(["camera", "microphone"], { origin: baseURL });
   try {
+    if (registered) await registerApprovedDoctor(page, patientPage, browser, credentials, baseURL);
     const request = patientContext.request;
     const login = await request.post("/api/auth/login", { data: credentials.patient });
     expect(login.ok()).toBeTruthy();
@@ -78,7 +82,13 @@ test("LiveKit real media connects patient and assigned doctor and records explic
     await page.getByLabel("Contraseña", { exact: true }).fill(credentials.legacy.password);
     await page.getByRole("button", { name: "Iniciar sesión", exact: true }).click();
     await expect(page).toHaveURL(/\/doctor$/);
-    if (process.env.E2E_GOOGLE_FIXTURE === "true") await linkAndSignInWithGoogle(page, "doctor", credentials.legacy.password);
+    if (process.env.E2E_GOOGLE_FIXTURE === "true") {
+      const denied = await page.request.post("/api/auth/google/challenge", { headers: { Origin: baseURL }, data: { purpose: "LINK", current_password: credentials.legacy.password } });
+      expect(denied.status()).toBe(403);
+      await page.goto("/doctor/profile");
+      await expect(page.getByText("Acceso institucional", { exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Verificar contraseña y vincular Google" })).toHaveCount(0);
+    }
 
     await patientPage.goto("/login");
     await patientPage.getByLabel("Correo electrónico").fill(credentials.patient.email);
@@ -86,21 +96,26 @@ test("LiveKit real media connects patient and assigned doctor and records explic
     await patientPage.getByRole("button", { name: "Iniciar sesión", exact: true }).click();
     await expect(patientPage).toHaveURL(/\/portal$/);
     if (process.env.E2E_GOOGLE_FIXTURE === "true") await linkAndSignInWithGoogle(patientPage, "portal", credentials.patient.password);
+    if (registered) await bookRegisteredDoctor(patientPage, credentials);
+    else {
     await patientPage.goto("/portal/appointments");
     await expect(patientPage.getByRole("heading", { name: "Prueba una videollamada ahora" })).toBeVisible();
     await patientPage.getByRole("button", { name: "Probar con Dr. Alejandro Méndez" }).click();
     await expect(patientPage.getByRole("heading", { name: "Crear consulta académica de prueba" })).toBeVisible();
     await patientPage.getByRole("button", { name: "Confirmar y entrar" }).click();
+    }
     await expect(patientPage).toHaveURL(/\/portal\/appointments\/\d+\/teleconsult$/);
     const appointmentId = Number(patientPage.url().match(/appointments\/(\d+)\/teleconsult$/)?.[1]);
     expect(appointmentId).toBeGreaterThan(0);
     const appointment = await (await request.get(`/api/appointments/${appointmentId}`)).json();
     expect(appointment.status).toBe("CONFIRMED");
     expect(appointment.modality).toBe("VIRTUAL");
-    expect(appointment.is_demo_test).toBe(true);
+    expect(appointment.is_demo_test).toBe(!registered);
+    if (!registered) {
     expect(appointment.appointment_label).toBe("Consulta académica de prueba");
     expect(appointment.plan).toBe("Consulta académica de prueba");
     expect(appointment.copay).toBe(0);
+    }
     expect(appointment.livekit_enabled).toBe(true);
     await expect(patientPage.getByRole("heading", { name: "Videoconsulta" })).toBeVisible();
     await expect(patientPage.locator(".vitalsync-prejoin")).toBeVisible();
@@ -111,10 +126,10 @@ test("LiveKit real media connects patient and assigned doctor and records explic
     await patientPage.getByRole("button", { name: "Desactivar cámara", exact: true }).click();
 
     await page.goto("/doctor/appointments");
-    await expect(page.getByText("Consulta académica de prueba").first()).toBeVisible();
+    if (!registered) await expect(page.getByText("Consulta académica de prueba").first()).toBeVisible();
     await page.locator(`a[href="/doctor/appointments/${appointmentId}"]`).click();
-    await expect(page.getByText("Consulta académica de prueba").first()).toBeVisible();
-    await page.getByRole("link", { name: "Ingresar a videollamada" }).click();
+    if (!registered) await expect(page.getByText("Consulta académica de prueba").first()).toBeVisible();
+    await page.getByRole("link", { name: /^(Ingresar a|Iniciar) videollamada$/ }).click();
     await enablePreview(page);
     await page.getByRole("button", { name: "Iniciar videollamada" }).click();
     await patientPage.getByRole("button", { name: "Ingresar a videollamada" }).click();
@@ -215,3 +230,5 @@ test("LiveKit real media connects patient and assigned doctor and records explic
     await patientContext.close();
   }
 });
+
+}

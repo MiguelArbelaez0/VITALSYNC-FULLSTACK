@@ -48,7 +48,4 @@ def doctor_for_user(db, user):
 
 def current_doctor(user=Depends(authenticated_user, scope='function'), db: Session = Depends(get_db, scope='function')):
     doctor = doctor_for_user(db, user)
-    state = db.get(DoctorCredentialState,user.id)
-    if state and state.must_change_password and not DEMO_MODE:
-        raise HTTPException(403,'Debes cambiar tu contraseña inicial antes de acceder al portal médico')
     return doctor
