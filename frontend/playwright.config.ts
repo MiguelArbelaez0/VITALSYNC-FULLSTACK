@@ -7,6 +7,7 @@ export default defineConfig({
   timeout: 60000,
   use: {
     baseURL: process.env.E2E_BASE_URL ?? "http://localhost:5188",
+    ...(process.env.E2E_BROWSER_CHANNEL ? { channel: process.env.E2E_BROWSER_CHANNEL } : {}),
     launchOptions: {
       args: process.env.E2E_LIVEKIT_PHYSICAL === "true"
         ? ["--use-fake-ui-for-media-stream"]

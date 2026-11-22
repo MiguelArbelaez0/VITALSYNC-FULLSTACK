@@ -1,4 +1,6 @@
-param([switch]$UsePhysicalDevices, [switch]$GoogleProviderFixture)
+param([switch]$UsePhysicalDevices, [switch]$GoogleProviderFixture,
+      [ValidateSet('desktop','mobile')][string]$Project = 'desktop',
+      [string]$Filter = 'LiveKit real media')
 $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
 
@@ -52,7 +54,7 @@ try {
   if ($UsePhysicalDevices) { $env:E2E_LIVEKIT_PHYSICAL = 'true' }
   $env:E2E_CREDENTIALS_FILE = $credentialsFile
   Push-Location frontend
-  try { npm run test:e2e -- --grep 'LiveKit real media' --project desktop; $testExit = $LASTEXITCODE }
+  try { npm run test:e2e -- --grep $Filter --project $Project; $testExit = $LASTEXITCODE }
   finally { Pop-Location }
   if ($testExit -ne 0) { docker compose @composeArgs logs --no-color test-backend test-livekit }
 }

@@ -21,6 +21,7 @@ from app.routers.admin import router as admin_router
 from app.routers.recovery import router as recovery_router
 from app.routers.google_auth import router as google_router
 from app.routers.medical_registration import router as medical_registration_router
+from app.routers.simulation import admin_router as simulation_admin_router, router as simulation_router
 
 app = FastAPI(title='VITALSYNC · Portales integrados', version='1.1.0')
 app.include_router(doctor_router)
@@ -28,6 +29,8 @@ app.include_router(admin_router)
 app.include_router(recovery_router)
 app.include_router(google_router)
 app.include_router(medical_registration_router)
+app.include_router(simulation_router)
+app.include_router(simulation_admin_router)
 PRIVACY_NOTICE_VERSION = 'VITALSYNC-PRIVACIDAD-2026-11-v1'
 
 @app.middleware('http')
@@ -403,8 +406,8 @@ def patient_livekit_token(appointment_id: int, user=Depends(current_user, scope=
     return livekit_consultations.issue_token(db, appointment_id, user)
 
 @app.post('/api/livekit/webhook')
-async def livekit_webhook(request: Request, authorization: str | None = Header(default=None), db: Session = Depends(get_db, scope='function')):
-    return livekit_consultations.process_webhook(db, await request.body(), authorization)
+async def livekit_webhook(request: Request, background: BackgroundTasks, authorization: str | None = Header(default=None), db: Session = Depends(get_db, scope='function')):
+    return livekit_consultations.process_webhook(db, await request.body(), authorization, background)
 
 @app.post('/api/appointments/{appointment_id}/teleconsult/status')
 def set_virtual_status(appointment_id: int, data: TeleconsultationStatus, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):

@@ -27,7 +27,7 @@ describe("Private local device preview", () => {
     expect(sdk.camera).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Activar cámara" }));
     await screen.findByText("Cámara activa · Solo vista previa");
-    expect(camera.attach).toHaveBeenCalledWith(screen.getByLabelText("Vista previa local de tu cámara"));
+    await waitFor(() => expect(camera.attach).toHaveBeenCalledWith(screen.getByLabelText("Vista previa local de tu cámara")));
     view.rerender(<DevicePreview busy={false} joinLabel="Ingresar a videollamada" onJoin={async () => {}} />);
     expect(sdk.camera).toHaveBeenCalledTimes(1); expect(camera.stop).not.toHaveBeenCalled();
     view.unmount(); expect(camera.stop).toHaveBeenCalledTimes(1);

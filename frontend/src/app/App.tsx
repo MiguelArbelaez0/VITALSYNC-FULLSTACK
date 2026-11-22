@@ -28,6 +28,7 @@ import {
 import { DoctorClinicalHistory } from "../features/doctor/ClinicalHistory";
 const AdminPortal = lazy(() => import("../features/admin/AdminPortal"));
 const Recover = lazy(() => import("../features/admin/Recover"));
+const Simulation = lazy(() => import("../features/appointments/Simulation"));
 export function Protected({
   role = "PATIENT",
 }: {
@@ -112,6 +113,7 @@ export function App() {
       </Route>
       <Route element={<Protected />}>
         <Route path="/portal" element={<Layout />}>
+          <Route path="simulation" element={<Suspense fallback={<Loading />}><Simulation /></Suspense>} />
           <Route index element={<Dashboard />} />
           <Route path="profile" element={<Profile />} />
           <Route path="plans" element={<Plans />} />
@@ -129,6 +131,7 @@ export function App() {
       </Route>
       <Route element={<Protected role="DOCTOR" />}>
         <Route path="/doctor" element={<Layout doctor />}>
+          <Route path="simulation" element={<Suspense fallback={<Loading />}><Simulation /></Suspense>} />
           <Route index element={<DoctorDashboard />} />
           <Route path="appointments" element={<DoctorAgenda />} />
           <Route path="appointments/:id" element={<DoctorDetail />} />

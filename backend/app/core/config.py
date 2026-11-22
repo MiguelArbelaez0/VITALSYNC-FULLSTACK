@@ -10,6 +10,7 @@ SESSION_HOURS = int(os.getenv('SESSION_HOURS', '12'))
 COOKIE_SECURE = os.getenv('COOKIE_SECURE', 'false').lower() == 'true'
 ALLOWED_ORIGINS = os.getenv('ALLOWED_ORIGINS', 'http://localhost:5188,http://127.0.0.1:5188,http://localhost:8088').split(',')
 LIVEKIT_ENABLED = os.getenv('LIVEKIT_ENABLED', 'false').lower() == 'true'
+LIVEKIT_MANAGED_ROOMS = os.getenv('LIVEKIT_MANAGED_ROOMS', 'false').lower() == 'true'
 LIVEKIT_API_URL = os.getenv('LIVEKIT_API_URL', 'http://livekit:7880')
 LIVEKIT_API_KEY = os.getenv('LIVEKIT_API_KEY', '')
 LIVEKIT_API_SECRET = os.getenv('LIVEKIT_API_SECRET', '')

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import (
     DEMO_MODE, LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_API_URL, LIVEKIT_ENABLED,
-    LIVEKIT_PUBLIC_URL, LIVEKIT_TOKEN_TTL_SECONDS, TELECONSULT_ROOM_OPEN_MINUTES,
+    LIVEKIT_PUBLIC_URL, LIVEKIT_TOKEN_TTL_SECONDS, LIVEKIT_MANAGED_ROOMS, TELECONSULT_ROOM_OPEN_MINUTES,
     TELECONSULT_WAIT_GRACE_MINUTES,
 )
 from app.models.entities import (
@@ -25,6 +25,23 @@ TERMINAL_APPOINTMENTS = {'ATTENDED', 'CANCELLED', 'PATIENT_ABSENT', 'DOCTOR_ABSE
 
 def enabled():
     return LIVEKIT_ENABLED and bool(LIVEKIT_API_KEY and LIVEKIT_API_SECRET)
+
+
+def ensure_room(name, max_participants=2):
+    if not LIVEKIT_MANAGED_ROOMS:
+        return
+
+    async def create_if_missing():
+        async with api.LiveKitAPI(LIVEKIT_API_URL, api_key=LIVEKIT_API_KEY, api_secret=LIVEKIT_API_SECRET) as client:
+            existing = await client.room.list_rooms(api.ListRoomsRequest(names=[name]))
+            if not existing.rooms:
+                await client.room.create_room(api.CreateRoomRequest(
+                    name=name, max_participants=max_participants, empty_timeout=120, departure_timeout=20))
+
+    try:
+        asyncio.run(asyncio.wait_for(create_if_missing(), timeout=8))
+    except Exception:
+        raise HTTPException(503, 'No se pudo abrir la sala. Vuelve a intentar en un momento.') from None
 
 
 def _room_membership(db: Session, appointment_id: int, user, doctor_id: int | None = None, allow_terminal: bool = False):
@@ -69,6 +86,7 @@ def _room_membership(db: Session, appointment_id: int, user, doctor_id: int | No
 
 def issue_token(db: Session, appointment_id: int, user, doctor_id: int | None = None):
     appointment, vc, role = _room_membership(db, appointment_id, user, doctor_id)
+    ensure_room(vc.livekit_room_name)
     identity = f'user:{user.id}'
     grants = api.VideoGrants(
         room_join=True,
@@ -82,7 +100,7 @@ def issue_token(db: Session, appointment_id: int, user, doctor_id: int | None = 
         can_subscribe=True,
         can_publish_data=False,
         can_update_own_metadata=False,
-        can_publish_sources=['camera', 'microphone'],
+        can_publish_sources=['camera', 'microphone', 'screen_share', 'screen_share_audio'],
     )
     token = (
         api.AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET)
@@ -101,7 +119,7 @@ def issue_token(db: Session, appointment_id: int, user, doctor_id: int | None = 
     }
 
 
-def process_webhook(db: Session, raw_body: bytes, auth_header: str | None):
+def process_webhook(db: Session, raw_body: bytes, auth_header: str | None, background=None):
     if not enabled() or not auth_header:
         raise HTTPException(401, 'Webhook no autorizado')
     try:
@@ -122,6 +140,14 @@ def process_webhook(db: Session, raw_body: bytes, auth_header: str | None):
     if not match:
         return {'accepted': True, 'processed': False}
     user_id = int(match.group(1))
+    if room_name.startswith('simulation-'):
+        from app.models.entities import SimulationRoom
+
+        practice = db.get(SimulationRoom, room_name.removeprefix('simulation-'))
+        admitted = practice and practice.ended_at is None and practice.expires_at > now() and user_id in (practice.owner_id, practice.guest_id)
+        if not admitted and event_type == 'participant_joined' and background is not None:
+            background.add_task(close_room, room_name)
+        return {'accepted': True, 'processed': False}
     vc = db.scalar(select(VirtualConsultation).where(
         VirtualConsultation.livekit_room_name == room_name,
     ).with_for_update())
@@ -152,6 +178,8 @@ def process_webhook(db: Session, raw_body: bytes, auth_header: str | None):
     # Keep the event for idempotency/audit, but never let it reopen or regress
     # the consultation state or append a post-finalization lifecycle transition.
     if appointment.status in TERMINAL_APPOINTMENTS or vc.status in {'FINALIZADA', 'CANCELADA', 'PACIENTE_AUSENTE', 'MEDICO_AUSENTE'}:
+        if LIVEKIT_MANAGED_ROOMS and event_type == 'participant_joined' and background is not None:
+            background.add_task(close_room, room_name)
         db.flush()
         return {'accepted': True, 'processed': True, 'terminal': True, 'connection_state': 'DISCONNECTED'}
 

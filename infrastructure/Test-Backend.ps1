@@ -14,7 +14,7 @@ $previousTestName = $env:VITALSYNC_TEST_DATABASE_NAME
 try {
     $env:VITALSYNC_TEST_DATABASE_NAME = $testDatabaseName
     $env:TEST_DATABASE_URL = $config.services.backend.environment.DATABASE_URL -replace '/[^/]+$', "/$testDatabaseName"
-    docker compose -p vitalsync run --rm --no-deps -e TEST_DATABASE_URL -e VITALSYNC_TEST_DATABASE_NAME -e LIVEKIT_ENABLED=false -e LIVEKIT_API_KEY= -e LIVEKIT_API_SECRET= -v "${PWD}/backend:/app" backend python -m pytest -q @TestPaths
+    docker compose -p vitalsync run --rm --no-deps -e TEST_DATABASE_URL -e VITALSYNC_TEST_DATABASE_NAME -e VITALSYNC_STARTUP_SEED=true -e LIVEKIT_ENABLED=false -e LIVEKIT_MANAGED_ROOMS=false -e LIVEKIT_API_KEY= -e LIVEKIT_API_SECRET= -v "${PWD}/backend:/app" backend python -m pytest -q @TestPaths
     if ($LASTEXITCODE -ne 0) { throw 'Fallaron las pruebas del backend.' }
 } finally {
     $env:TEST_DATABASE_URL = $previousTestUrl

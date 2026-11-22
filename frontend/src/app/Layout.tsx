@@ -19,6 +19,8 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../services/api";
 import { useAuth } from "../hooks/useAuth";
 import { Logo, ErrorBox } from "../components/common";
 const navigation = [
@@ -57,6 +59,12 @@ export function Layout({
   admin?: boolean;
 }) {
   const { user, logout } = useAuth();
+  const simulation = useQuery({
+    queryKey: ["simulation-access", user?.id],
+    queryFn: () => api<{ available: boolean }>("/simulation/access"),
+    enabled: Boolean(user && !admin),
+    retry: false,
+  });
   const [open, setOpen] = useState(false);
   const [logoutError, setLogoutError] = useState<unknown>(null);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -115,6 +123,7 @@ export function Layout({
               {n.label}
             </NavLink>
           ))}
+          {simulation.data?.available && <NavLink className="nav-item" to={doctor ? "/doctor/simulation" : "/portal/simulation"} onClick={() => setOpen(false)}>Probar videollamada</NavLink>}
         </nav>
         <div className="sidebar-bottom">
           <div className="care-note">

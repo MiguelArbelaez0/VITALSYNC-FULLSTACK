@@ -24,6 +24,7 @@ vi.mock("@livekit/components-react", () => ({
   useRoomContext: () => ({ localParticipant: { setMicrophoneEnabled: vi.fn(), setCameraEnabled: vi.fn(), isSpeaking: true }, remoteParticipants: new Map(), disconnect: vi.fn() }),
   useLocalParticipant: () => ({ localParticipant: { setMicrophoneEnabled: vi.fn(), setCameraEnabled: vi.fn(), isSpeaking: true }, isMicrophoneEnabled: true, isCameraEnabled: true }),
   useParticipants: () => [],
+  useConnectionState: () => "connected",
   useTracks: () => [],
 }));
 

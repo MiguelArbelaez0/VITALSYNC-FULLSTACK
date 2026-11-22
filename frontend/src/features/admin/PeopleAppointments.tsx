@@ -178,6 +178,13 @@ export function PeopleAppointments({ c }: { c: Context }) {
                     r.status !== "ACTIVE",
                   )}
                   {button("Revocar Google", () => revokeGoogle(c, r))}
+                  {button("Autorizar simulación", () => open({
+                    title: "Autorizar simulación para paciente de demostración",
+                    path: `/patients/${r.id}/simulation-access`,
+                    fields: [],
+                    confirm: true,
+                    description: "Confirma que la cuenta es ficticia. Esta autorización se limita a la sala de simulación y queda auditada.",
+                  }), r.status !== "ACTIVE")}
                 </>
               )}
             </>

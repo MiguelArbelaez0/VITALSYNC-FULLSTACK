@@ -265,6 +265,8 @@ Consulta [arquitectura, rutas, migración, pruebas y acceso local del portal mé
 
 ## Docker unificado
 
+VITALSYNC v1.1.0 incluye una **Sala de simulación** de LiveKit para cuentas académicas autorizadas. Permite probar cámara, micrófono y pantalla compartida a solas o mediante una invitación privada, sin generar una cita ni un pago. El inicio y los controles son comunes a la videoconsulta. Consulta [videollamadas, configuración local y alcance académico](docs/video-consultations-v1.1.md).
+
 El único despliegue permanente es `vitalsync`, con `frontend`, `backend` y `db`. Los tres portales comparten la API, el login y la base principal existente. El volumen principal es externo y queda fijado por nombre; no se genera una base vacía si desaparece.
 
 ```powershell

@@ -31,6 +31,12 @@
 .livekit-self-placeholder { display: flex; flex-direction: column; align-items: center; gap: 6px; color: #eaf2f5; font-size: .8rem; }
 .livekit-self-label { position: absolute; left: 7px; bottom: 6px; padding: 3px 7px; border-radius: 5px; background: #071a2dc9; color: #fff; font-size: .72rem; }
 .livekit-controls { display: flex; align-items: center; gap: 9px; padding: 13px 2px 2px; }
+.livekit-controls { flex-wrap: wrap; }
+.livekit-live-surface:fullscreen { overflow: auto; }
+.simulation-page { display: grid; gap: 18px; }
+.simulation-page .vitalsync-prejoin { margin: 16px; }
+.livekit-main-video > video.livekit-screen { object-fit: contain; }
+.livekit-remote-thumbnail { right: auto; left: 12px; top: 12px; bottom: auto; display: grid; place-items: center; }
 .livekit-control { min-width: 72px; min-height: 61px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 7px 12px; border: 1px solid #ffffff27; border-radius: 11px; background: #ffffff13; color: #fff; cursor: pointer; font: inherit; transition: background .16s ease, border-color .16s ease, transform .16s ease; }
 .livekit-control svg { width: 20px; height: 20px; }
 .livekit-control span { white-space: nowrap; font-size: .72rem; font-weight: 650; }

@@ -64,6 +64,28 @@ class GoogleChallenge(Base):
     email = Column(String(254))
     name = Column(String(120))
 
+class SimulationRoom(Base):
+    __tablename__ = 'simulation_rooms'
+    id = Column(String(32), primary_key=True)
+    owner_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    guest_id = Column(Integer, ForeignKey('users.id'))
+    invite_hash = Column(String(64), unique=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    ended_at = Column(DateTime(timezone=True))
+
+
+class SimulationPatientAccess(Base):
+    __tablename__ = 'simulation_patient_access'
+    patient_id = Column(Integer, ForeignKey('patients.id', ondelete='CASCADE'), primary_key=True)
+
+
+class SimulationAttempt(Base):
+    __tablename__ = 'simulation_attempts'
+    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
+    window_start = Column(DateTime(timezone=True), nullable=False)
+    attempts = Column(Integer, nullable=False)
+
+
 class DoctorApplication(Base):
     __tablename__ = 'doctor_applications'
     id = Column(Integer, primary_key=True)

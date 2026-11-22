@@ -3,6 +3,7 @@ services:
   test-backend:
     environment:
       LIVEKIT_ENABLED: "true"
+      LIVEKIT_MANAGED_ROOMS: "true"
       LIVEKIT_API_URL: http://test-livekit:7880
       LIVEKIT_PUBLIC_URL: ws://localhost:7888
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
@@ -17,6 +18,8 @@ services:
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
       LIVEKIT_CONFIG: |
         port: 7880
+        room:
+          auto_create: false
         log_level: info
         keys:
           "${LIVEKIT_API_KEY:-}": "${LIVEKIT_API_SECRET:-}"

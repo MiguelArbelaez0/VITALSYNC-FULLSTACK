@@ -8,6 +8,7 @@ import {
   type TrackReference,
   VideoTrack,
   useLocalParticipant,
+  useConnectionState,
   useParticipants,
   useRoomContext,
   useTracks,
@@ -268,19 +269,20 @@ function connectionLabel(serverState: Appointment["livekit_connection_state"], c
   return "Esperando ingreso";
 }
 
-function RoomSurface({
+export function RoomSurface({
   remoteLabel, localLabel, onExit, onFinish, finishing, elapsed,
-  consultationInProgress,
+  consultationInProgress, simulation = false,
 }: {
   remoteLabel: string; localLabel: string; onExit: () => void;
-  onFinish?: () => void; finishing: boolean; elapsed: string; consultationInProgress: boolean;
+  onFinish?: () => void; finishing: boolean; elapsed: string; consultationInProgress: boolean; simulation?: boolean;
 }) {
   const room = useRoomContext();
+  const connection = useConnectionState(room);
   const { localParticipant, isMicrophoneEnabled, isCameraEnabled } = useLocalParticipant();
   const participants = useParticipants();
-  const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
-  const remoteTrack = useMemo(() => tracks.find((track) => !track.participant.isLocal), [tracks]);
-  const localTrack = useMemo(() => tracks.find((track) => track.participant.isLocal), [tracks]);
+  const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }, { source: Track.Source.ScreenShare, withPlaceholder: false }]);
+  const remoteTrack = useMemo(() => tracks.find((track) => track.source === Track.Source.Camera && !track.participant.isLocal), [tracks]);
+  const localTrack = useMemo(() => tracks.find((track) => track.source === Track.Source.Camera && track.participant.isLocal), [tracks]);
   const [deviceMenu, setDeviceMenu] = useState(false);
   const [operation, setOperation] = useState("");
   const [mediaError, setMediaError] = useState("");
@@ -299,6 +301,21 @@ function RoomSurface({
     finally { setOperation(""); }
   }
 
+  const screen = tracks.find(track => track.source === Track.Source.ScreenShare && track.publication && !track.publication.isMuted);
+  const label = simulation ? participants.find(p => !p.isLocal)?.name || remoteLabel : remoteLabel;
+  const stage = useRef<HTMLDivElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    const update = () => setFullscreen(document.fullscreenElement === stage.current);
+    document.addEventListener("fullscreenchange", update);
+    return () => document.removeEventListener("fullscreenchange", update);
+  }, []);
+  async function shareScreen() {
+    setOperation("screen"); setMediaError("");
+    try { await localParticipant.setScreenShareEnabled(!localParticipant.isScreenShareEnabled); }
+    catch { setMediaError("No se pudo compartir pantalla. Comprueba los permisos o selecciona una ventana."); }
+    finally { setOperation(""); }
+  }
   async function leave() {
     onExit();
     try { await room.localParticipant.setMicrophoneEnabled(false); } catch { /* best-effort media shutdown before leaving */ }
@@ -307,19 +324,25 @@ function RoomSurface({
   }
 
   return (
-    <div className="livekit-live-surface">
-      <div className="livekit-live-heading"><div><span className="livekit-live-dot" /><div><strong>Consulta en curso</strong><small>{elapsed} transcurridos</small></div></div><span className="livekit-encrypted">Sala privada</span></div>
+    <div className="livekit-live-surface" ref={stage}>
+      <div className="livekit-live-heading"><div><span className="livekit-live-dot" /><div><strong>{simulation ? "Simulación académica" : "Consulta en curso"}</strong><small>{simulation ? "Simulación académica — no corresponde a una consulta médica" : elapsed + " transcurridos"}</small></div></div><span className="livekit-encrypted">Sala privada</span></div>
       {consultationInProgress && !remoteConnected && <div className="livekit-peer-notice" role="status"><strong>El otro participante salió o perdió la conexión.</strong><span>La consulta sigue activa; podrá volver a ingresar mientras la cita esté autorizada.</span></div>}
       <div className="livekit-video-grid">
         <div className="livekit-main-video">
-          {remoteTrack?.publication && !remoteTrack.publication.isMuted ? <VideoTrack trackRef={remoteTrack as TrackReference} /> : <div className="livekit-video-placeholder"><span>{remoteLabel.slice(0, 1).toUpperCase()}</span><strong>{remoteLabel}</strong><small>{remoteTrack ? "Cámara desactivada" : "Esperando al otro participante…"}</small></div>}
-          <div className="livekit-video-name"><span className="livekit-live-dot" />{remoteLabel}</div>
+          {screen ? <><VideoTrack className="livekit-screen" trackRef={screen as TrackReference} /><span className="livekit-video-name">Pantalla compartida · {screen.participant.name}</span></> : remoteTrack?.publication && !remoteTrack.publication.isMuted ? <VideoTrack trackRef={remoteTrack as TrackReference} /> : <div className="livekit-video-placeholder"><span>{label.slice(0, 1).toUpperCase()}</span><strong>{label}</strong><small>{remoteTrack ? "Cámara desactivada" : "Esperando al otro participante…"}</small></div>}
+          {!screen && <div className="livekit-video-name"><span className="livekit-live-dot" />{label}</div>}
           <RoomAudioRenderer />
         </div>
         <div className={`livekit-self-video ${!isCameraEnabled ? "is-off" : ""}`}>
           {localTrack && isCameraEnabled && "publication" in localTrack && localTrack.publication ? <VideoTrack trackRef={localTrack as TrackReference} /> : <div className="livekit-self-placeholder"><CameraOff size={24} /><span>Cámara apagada</span></div>}
           <span className="livekit-self-label">{localLabel}</span>
         </div>
+        {screen && remoteConnected && <div className="livekit-self-video livekit-remote-thumbnail">
+          {remoteTrack?.publication && !remoteTrack.publication.isMuted
+            ? <VideoTrack trackRef={remoteTrack as TrackReference} />
+            : <div className="livekit-self-placeholder"><CameraOff size={20} /><span>Cámara desactivada</span></div>}
+          <span className="livekit-self-label">{label}</span>
+        </div>}
       </div>
       <div className="livekit-controls" aria-label="Controles de llamada">
         <button type="button" className={`livekit-control ${!isMicrophoneEnabled ? "is-muted" : ""}`} onClick={() => void toggle("microphone")} disabled={operation === "microphone"} aria-pressed={isMicrophoneEnabled}>
@@ -332,16 +355,19 @@ function RoomSurface({
           <button type="button" className={`livekit-control ${deviceMenu ? "is-selected" : ""}`} onClick={() => setDeviceMenu((shown) => !shown)} aria-expanded={deviceMenu}>
             <Settings2 /><span>Dispositivos</span>
           </button>
-          {deviceMenu && <div className="livekit-device-menu"><h3>Micrófono</h3><MediaDeviceSelect kind="audioinput" onError={microphoneError} onDeviceSelectError={microphoneError} /><h3>Cámara</h3><MediaDeviceSelect kind="videoinput" onError={cameraError} onDeviceSelectError={cameraError} /><h3>Salida de audio</h3><MediaDeviceSelect kind="audiooutput" onError={outputError} onDeviceSelectError={outputError} /><p>Compartir pantalla no está habilitado para esta sala.</p></div>}
+          {deviceMenu && <div className="livekit-device-menu"><h3>Micrófono</h3><MediaDeviceSelect kind="audioinput" onError={microphoneError} onDeviceSelectError={microphoneError} /><h3>Cámara</h3><MediaDeviceSelect kind="videoinput" onError={cameraError} onDeviceSelectError={cameraError} /><h3>Salida de audio</h3><MediaDeviceSelect kind="audiooutput" onError={outputError} onDeviceSelectError={outputError} /></div>}
         </div>
+        <button type="button" className="livekit-control" disabled={!navigator.mediaDevices?.getDisplayMedia || operation === "screen"} onClick={() => void shareScreen()}>{localParticipant.isScreenShareEnabled ? "Dejar de compartir" : "Compartir pantalla"}</button>
+        {document.fullscreenEnabled && <button type="button" className="livekit-control" onClick={() => void (fullscreen ? document.exitFullscreen() : stage.current!.requestFullscreen()).catch(() => setMediaError("La pantalla completa no está disponible."))}>{fullscreen ? "Restaurar tamaño" : "Pantalla completa"}</button>}
+        <details><summary>Participantes ({participants.length})</summary><ul>{participants.map(p => <li key={p.identity}>{p.isLocal ? localLabel : p.name || label}</li>)}</ul></details>
         <span className="livekit-control-spacer" />
-        <button type="button" className="livekit-control livekit-leave-control" onClick={() => void leave()}><PhoneOff /><span>Salir de la llamada</span></button>
+        <button type="button" className="livekit-control livekit-leave-control" onClick={() => void leave()}><PhoneOff /><span>{simulation ? "Salir de la sala" : "Salir de la llamada"}</span></button>
         {onFinish && <button type="button" className="livekit-control livekit-finish-control" onClick={onFinish} disabled={finishing}>
-          <Phone /><span>{finishing ? "Finalizando…" : "Finalizar consulta"}</span>
+          <Phone /><span>{finishing ? "Finalizando…" : simulation ? "Terminar simulación" : "Finalizar consulta"}</span>
         </button>}
       </div>
       {mediaError && <p className="livekit-peer-notice" role="alert">{mediaError} Usa el control correspondiente para reintentar.</p>}
-      <div className="livekit-connected-footer"><Headphones size={16} /><span>Audio y video en tiempo real · No se graba</span><span className="livekit-connected-label"><span />Conectado</span></div>
+      <div className="livekit-connected-footer"><Headphones size={16} /><span>Audio y video en tiempo real · No se graba</span><span className="livekit-connected-label"><span />{connection === "connected" ? "Conectado" : connection === "reconnecting" ? "Reconectando…" : connection === "disconnected" ? "Desconectado" : "Conectando…"}</span></div>
     </div>
   );
 }

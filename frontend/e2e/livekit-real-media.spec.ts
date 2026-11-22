@@ -199,6 +199,11 @@ test(`LiveKit real media ${registered ? "new approved registration" : "existing 
     await page.getByRole("button", { name: "Iniciar videollamada" }).click();
     await expect(page.getByText("Conectado", { exact: true }).first()).toBeVisible({ timeout: 30000 });
 
+    const issuedToken = await (await request.post(`/api/appointments/${appointmentId}/livekit-token`, { data: {} })).json();
+    const validateIssuedToken = async () => (await fetch(issuedToken.server_url.replace(/^ws/, "http") + "/rtc/validate", {
+      headers: { Authorization: "Bearer " + issuedToken.token },
+    })).status;
+    expect(await validateIssuedToken()).toBe(200);
     await page.getByRole("button", { name: "Finalizar consulta" }).click();
     await page.getByRole("button", { name: "Confirmar y finalizar" }).click();
     await expect(page.getByRole("heading", { name: "Consulta finalizada" })).toBeVisible({ timeout: 20000 });
@@ -212,6 +217,7 @@ test(`LiveKit real media ${registered ? "new approved registration" : "existing 
     }
     const finalToken = await request.post(`/api/appointments/${appointmentId}/livekit-token`, { data: {} });
     expect(finalToken.status()).toBe(409);
+    await expect.poll(validateIssuedToken, { timeout: 10000 }).toBe(404);
     const completed = await (await request.get("/api/appointments?view=completed")).json();
     expect(completed.some((item: any) => item.id === appointmentId && item.status === "ATTENDED")).toBeTruthy();
     const doctorHistory = await (await page.request.get("/api/doctor/appointments?view=history")).json();

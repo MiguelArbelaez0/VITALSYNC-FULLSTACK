@@ -1,6 +1,7 @@
 """Operación administrativa local explícita e idempotente. Nunca restablece datos."""
 from datetime import datetime, timedelta
 import secrets
+import os
 from zoneinfo import ZoneInfo
 from sqlalchemy import select, text, inspect, Table, MetaData
 from types import SimpleNamespace
@@ -80,4 +81,5 @@ def seed():
             db.add(AuditEvent(actor_id=admin.id, action='DEVELOPMENT_SEED'))
 
 if __name__ == '__main__':
-    seed()
+    if os.getenv('VITALSYNC_STARTUP_SEED', 'true').lower() == 'true':
+        seed()

@@ -25,6 +25,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-vitalsync}:${POSTGRES_PASSWORD:-local_demo_change_me}@db:5432/${POSTGRES_DB:-vitalsync}
       DEMO_MODE: ${DEMO_MODE:-true}
+      VITALSYNC_STARTUP_SEED: ${VITALSYNC_STARTUP_SEED:-true}
       HOLD_MINUTES: ${HOLD_MINUTES:-10}
       CANCELLATION_HOURS: ${CANCELLATION_HOURS:-2}
       TELECONSULT_ROOM_OPEN_MINUTES: ${TELECONSULT_ROOM_OPEN_MINUTES:-5}
@@ -34,6 +35,7 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       DOCTOR_CREDENTIAL_KEY: ${DOCTOR_CREDENTIAL_KEY:-}
       LIVEKIT_ENABLED: ${LIVEKIT_ENABLED:-false}
+      LIVEKIT_MANAGED_ROOMS: "true"
       LIVEKIT_API_URL: http://livekit:7880
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
@@ -75,6 +77,8 @@ services:
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
       LIVEKIT_CONFIG: |
         port: 7880
+        room:
+          auto_create: false
         log_level: info
         keys:
           "${LIVEKIT_API_KEY:-}": "${LIVEKIT_API_SECRET:-}"

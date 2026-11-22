@@ -166,3 +166,14 @@ El E2E local completó la preparación, conexión de dos participantes, publicac
 Esta configuración no habilita conexiones desde Internet ni desde otra red. Para ello hacen falta un dominio resoluble, HTTPS para la aplicación, WSS para LiveKit, certificados públicos válidos, DNS, dirección pública anunciada por el servidor, configuración NAT/firewall y puertos WebRTC accesibles. Redes corporativas pueden requerir TURN/TLS o TURN/UDP. LiveKit advierte que el despliegue WebRTC debe exponer sus puertos ICE y anunciar correctamente la IP ([requisitos de firewall](https://docs.livekit.io/transport/self-hosting/ports-firewall/)).
 
 No se contrataron servicios, publicaron puertos, crearon DNS ni desplegaron TURN. Esa validación queda pendiente de infraestructura y autorización. El producto sigue siendo académico y no reemplaza atención clínica real.
+## Sala de simulación académica
+
+En modo demostración, el menú **Probar videollamada** abre una sala individual o privada sin agenda ni cobros. Los médicos ficticios y los pacientes de demostración pueden utilizarla. Para una cuenta paciente ficticia recién registrada, un administrador con permiso de cuentas puede habilitarla en **Pacientes → Autorizar simulación**. El permiso queda auditado y es independiente de la atención clínica.
+
+La sala privada admite un anfitrión y un invitado. El código se comparte por un canal privado, se reserva al primer invitado autorizado y dura hasta 30 minutos. Es posible volver a ingresar desde la lista de salas activas. Los intentos de invitación se limitan por cuenta. El anfitrión puede terminar la simulación y revocar nuevos ingresos.
+
+Compose desactiva la creación automática de salas en LiveKit. FastAPI verifica la autorización y el estado persistido antes de crear una sala. Después del cierre, un token anterior no puede volver a crearla. El cliente cierra la simulación cuando vence su plazo y la API deja de emitir tokens. El límite de participantes se aplica también dentro de LiveKit.
+
+La vista previa permite entrar sin cámara ni micrófono. Los controles de sala permiten cambiar dispositivos, consultar participantes, compartir pantalla según el navegador y alternar pantalla completa. No se graban audio, video ni transcripciones. PostgreSQL guarda las salas en tablas separadas de citas y pagos. Los webhooks de simulación no actualizan registros clínicos.
+
+Para un entorno nuevo, conserva la configuración documentada de LiveKit y arranca con `docker compose --profile video up -d --build --wait`. En una instalación existente que deba conservar cero pacientes, configura `VITALSYNC_STARTUP_SEED=false` en el archivo local `.env`. Mantén el modo demo habilitado para usar las salas académicas.
