@@ -3,9 +3,12 @@ from datetime import datetime,timedelta,time
 from zoneinfo import ZoneInfo
 from sqlalchemy import select,func,text,delete,or_,and_
 from fastapi import HTTPException
-from app.models.entities import (User,Patient,Doctor,DoctorAccount,DoctorCredentialState,Specialty,Plan,PlanRule,PlanRevision,PatientPlan,SubscriptionTerms,Payment,PaymentTerms,Hold,Appointment,Availability,DoctorBlock,BlockRelease,StatusHistory,Notification,AuditEvent,AdminEvent,AdminPermission,RecoveryRequest,RefundRequest,RefundTransition,AppointmentReschedule,AppSetting,SessionToken,now)
+from app.models.entities import (User,Patient,Doctor,DoctorAccount,DoctorCredentialState,Specialty,Plan,PlanRule,PlanRevision,PatientPlan,SubscriptionTerms,Payment,PaymentTerms,Hold,Appointment,VirtualConsultation,Availability,DoctorBlock,BlockRelease,StatusHistory,Notification,AuditEvent,AdminEvent,AdminPermission,RecoveryRequest,RefundRequest,RefundTransition,AppointmentReschedule,AppSetting,SessionToken,now)
 from app.core.security import passwords
 from app.services import booking,payments,doctor_portal,plan_terms
+from app.services import livekit_consultations
+from app.services.doctor_accounts import available_doctor_email
+from app.core.config import DEMO_MODE
 import secrets
 
 SCOPES=('dashboard','doctors','patients','appointments','availability','plans','payments','refunds','audit','settings','accounts')
@@ -47,10 +50,15 @@ def patient_dict(u,p):
 
 def appointment_dict(db,a):
     d=db.get(Doctor,a.doctor_id);snap=a.snapshot.terms if a.snapshot else {}
+    virtual=db.get(VirtualConsultation,a.id) if a.modality=='VIRTUAL' else None
     replacement=db.scalar(select(AppointmentReschedule).where(or_(AppointmentReschedule.previous_id==a.id,AppointmentReschedule.replacement_id==a.id)))
-    return dict(id=a.id,code=a.code,patient_id=a.patient_id,patient=db.get(User,a.patient_id).name,doctor_id=a.doctor_id,doctor=snap.get('doctor',d.name),specialty_id=d.specialty_id,specialty=snap.get('specialty',db.get(Specialty,d.specialty_id).name),plan_id=a.plan_id,plan=snap.get('plan',db.get(Plan,a.plan_id).name),starts_at=a.starts_at,ends_at=a.ends_at,modality=a.modality,status=a.status,version=a.version,copay=a.copay,payment_id=a.payment_id,cancellation_reason=a.cancellation_reason,cancelled_by=a.cancelled_by,completion_source=a.completion_source,clinically_attended=a.clinically_attended,reschedule=dict(previous_id=replacement.previous_id,replacement_id=replacement.replacement_id,reason=replacement.reason) if replacement else None)
+    livekit_started = virtual.started_at if virtual and virtual.status == 'FINALIZADA' else None
+    livekit_finalized = virtual.finalized_at if virtual and virtual.status == 'FINALIZADA' else None
+    livekit_duration = int((livekit_finalized - livekit_started).total_seconds() // 60) if livekit_started and livekit_finalized else None
+    return dict(id=a.id,code=a.code,patient_id=a.patient_id,patient=db.get(User,a.patient_id).name,doctor_id=a.doctor_id,doctor=snap.get('doctor',d.name),specialty_id=d.specialty_id,specialty=snap.get('specialty',db.get(Specialty,d.specialty_id).name),plan_id=a.plan_id,plan=snap.get('plan',db.get(Plan,a.plan_id).name if a.plan_id else None),starts_at=a.starts_at,ends_at=a.ends_at,modality=a.modality,status=a.status,status_label='FINALIZADA' if virtual and virtual.status == 'FINALIZADA' else a.status,version=a.version,copay=a.copay,payment_id=a.payment_id,cancellation_reason=a.cancellation_reason,cancelled_by=a.cancelled_by,completion_source=a.completion_source,clinically_attended=a.clinically_attended,is_demo_test=a.is_demo_test,appointment_label='Consulta académica de prueba' if a.is_demo_test else None,virtual_session=dict(provider_enabled=livekit_consultations.enabled(),connection_state=virtual.livekit_connection_state,last_event_at=virtual.livekit_last_event_at,started_at=livekit_started,finalized_at=livekit_finalized,duration_minutes=livekit_duration) if virtual else None,reschedule=dict(previous_id=replacement.previous_id,replacement_id=replacement.replacement_id,reason=replacement.reason) if replacement else None)
 
 def request_recovery(db,actor,user,reason):
+    if user.role=='DOCTOR':fail('Usa el restablecimiento de credenciales médicas y su entrega privada',403)
     # The user lock serializes duplicate requests; password hashes remain untouched.
     get(db,User,user.id,True)
     if user.status!='ACTIVE':fail('Activa la cuenta antes de solicitar recuperación')
@@ -61,14 +69,20 @@ def request_recovery(db,actor,user,reason):
     return row
 
 def create_doctor(db,actor,data):
+    db.execute(text('SELECT pg_advisory_xact_lock(861993)'))
     db.execute(text('SELECT pg_advisory_xact_lock(861995)'))
     get(db,Specialty,data.specialty_id)
-    if db.scalar(select(User.id).where(func.lower(User.email)==str(data.email).lower())):fail('El correo ya pertenece a una cuenta')
+    if not DEMO_MODE and not data.email:fail('Indica el correo institucional del profesional',422)
+    if data.email and db.scalar(select(User.id).where(func.lower(User.email)==str(data.email).lower())) and not DEMO_MODE:fail('El correo ya pertenece a una cuenta')
     if db.scalar(select(Doctor.id).where(func.lower(Doctor.name)==data.name.lower())):fail('Ya existe un profesional con ese nombre')
     d=Doctor(**data.model_dump(exclude={'reason','email'}));db.add(d);db.flush()
-    u=User(email=str(data.email).lower(),name=d.name,role='DOCTOR',status='ACTIVE' if d.enabled else 'DISABLED',password_hash=passwords.hash(secrets.token_urlsafe(48)))
-    db.add(u);db.flush();db.add(DoctorAccount(user_id=u.id,doctor_id=d.id));db.flush();db.add(DoctorCredentialState(user_id=u.id,must_change_password=True))
-    if d.enabled:request_recovery(db,actor,u,'Primer acceso individual del profesional: '+data.reason)
+    email=available_doctor_email(db,d.name,d.id) if DEMO_MODE else str(data.email).lower()
+    u=User(email=email,name=d.name,role='DOCTOR',status='ACTIVE' if d.enabled else 'DISABLED',password_hash=passwords.hash(secrets.token_urlsafe(48)))
+    db.add(u);db.flush();db.add(DoctorAccount(user_id=u.id,doctor_id=d.id));db.flush()
+    if d.enabled:
+        from app.services.medical_registration import queue_credentials
+        queue_credentials(db,actor,u,'Primer acceso individual del profesional: '+data.reason)
+    else:db.add(DoctorCredentialState(user_id=u.id,must_change_password=False))
     audit(db,actor,'ADMIN_DOCTOR_CREATED','doctor',d.id,data.reason,{'user_id':u.id,'enabled':d.enabled})
     return doctor_dict(db,d)
 

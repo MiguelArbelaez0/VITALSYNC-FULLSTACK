@@ -41,6 +41,7 @@ export default function Recover() {
       <Logo />
       <section className="panel">
         <h1>Recuperar mi acceso</h1>
+        <div className="notice">Si eres médico, solicita asistencia administrativa: tras verificar tu identidad se genera una nueva contraseña individual y se entrega de forma privada. Este formulario de cambio por enlace no está disponible para cuentas médicas.</div>
         <p>
           Usa el enlace privado recibido del operador. Es válido por 24 horas y
           se consume una sola vez. Las demás sesiones se cerrarán al guardar tu

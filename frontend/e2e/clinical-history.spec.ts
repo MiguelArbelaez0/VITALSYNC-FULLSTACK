@@ -1,6 +1,5 @@
 import { test, expect, Page } from "@playwright/test";
-import { readFileSync, writeFileSync } from "node:fs";
-import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 
@@ -24,29 +23,13 @@ test("historia ficticia protegida, primer acceso individual y teleconsulta entre
     await target.getByLabel("Correo electrónico").fill(credential.email);
     await target
       .getByLabel("Contraseña", { exact: true })
-      .fill(credential.current_password ?? credential.temporary_password);
+      .fill(credential.temporary_password);
     await target
       .getByRole("button", { name: "Iniciar sesión", exact: true })
       .click();
-    if (!credential.current_password) {
-      await expect(target.getByText("PRIMER ACCESO MÉDICO")).toBeVisible();
-      expect((await target.request.get("/api/doctor/dashboard")).status()).toBe(
-        403,
-      );
-      const fresh = "IndividualA1" + randomBytes(24).toString("hex");
-      await target
-        .getByLabel("Contraseña actual o inicial")
-        .fill(credential.temporary_password);
-      await target.getByLabel("Nueva contraseña", { exact: true }).fill(fresh);
-      await target.getByLabel("Repetir nueva contraseña").fill(fresh);
-      await target.getByRole("button", { name: "Guardar contraseña" }).click();
-      await expect(
-        target.getByRole("heading", { name: "Hola, " + credential.name }),
-      ).toBeVisible();
-      credential.current_password = fresh;
-      writeFileSync(credentialFile, JSON.stringify(data));
-    }
     await expect(target).toHaveURL(/\/doctor$/);
+    expect((await target.request.get("/api/doctor/dashboard")).status()).toBe(200);
+    await expect(target.getByText("PRIMER ACCESO MÉDICO")).toHaveCount(0);
   }
   const pc = await browser.newContext({
     baseURL: process.env.E2E_BASE_URL,

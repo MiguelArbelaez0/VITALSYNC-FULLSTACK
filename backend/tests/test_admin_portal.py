@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from conftest import ADMIN_TEST_PASSWORD, PATIENT_TEST_PASSWORD, appointment, activate
 from app.db.session import SessionLocal
 from app.main import app
-from app.models.entities import User, DoctorAccount, DoctorCredentialState, RecoveryRequest, Plan, PatientPlan, SubscriptionTerms, Payment, PaymentTerms, RefundRequest, RefundTransition, Appointment, Doctor, Availability
+from app.models.entities import User, DoctorCredentialDelivery, DoctorAccount, DoctorCredentialState, RecoveryRequest, Plan, PatientPlan, SubscriptionTerms, Payment, PaymentTerms, RefundRequest, RefundTransition, Appointment, Doctor, Availability
 
 
 def login_admin(client):
@@ -52,22 +52,24 @@ def test_admin_module_scope_is_enforced_server_side(client):
         assert denied and denied.details == {'status': 403, 'method': 'GET', 'route': '/api/admin/patients'}
 
 
-def test_admin_doctor_creation_creates_private_recovery_without_exposing_password(client):
+def test_admin_doctor_creation_creates_private_delivery_without_exposing_password(client):
     admin = login_admin(client)
     response = admin.post('/api/admin/doctors', json={
-        'name': 'Dra. Prueba Administrativa', 'email': 'admin.doctor+' + uuid4().hex[:10] + '@vitalsync.demo',
+        'name': 'Dra. Prueba Administrativa',
         'specialty_id': 1, 'bio': 'Profesional ficticia para verificar el acceso del portal administrativo.',
         'modalities': ['VIRTUAL', 'PRESENCIAL'], 'enabled': True, 'reason': 'Registro profesional de prueba',
     })
     assert response.status_code == 201, response.text
     assert 'password' not in response.text.lower()
     row = response.json()
+    assert row['email'].startswith('prueba.administrativa')
+    assert row['email'].endswith('@doctor.vitalsync.demo')
     with SessionLocal() as db:
         link = db.scalar(select(DoctorAccount).where(DoctorAccount.doctor_id == row['id']))
         user = db.get(User, link.user_id)
         assert user.status == 'ACTIVE'
         assert db.scalar(select(DoctorCredentialState).where(DoctorCredentialState.user_id == user.id))
-        assert db.scalar(select(RecoveryRequest).where(RecoveryRequest.user_id == user.id, RecoveryRequest.status == 'PENDING'))
+        assert db.scalar(select(DoctorCredentialDelivery).where(DoctorCredentialDelivery.user_id == user.id, DoctorCredentialDelivery.status == 'PENDING'))
         assert user.password_hash != 'MedicoDemo2026!'
 
 

@@ -25,12 +25,22 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-vitalsync}:${POSTGRES_PASSWORD:-local_demo_change_me}@db:5432/${POSTGRES_DB:-vitalsync}
       DEMO_MODE: ${DEMO_MODE:-true}
+      VITALSYNC_STARTUP_SEED: ${VITALSYNC_STARTUP_SEED:-true}
       HOLD_MINUTES: ${HOLD_MINUTES:-10}
       CANCELLATION_HOURS: ${CANCELLATION_HOURS:-2}
       TELECONSULT_ROOM_OPEN_MINUTES: ${TELECONSULT_ROOM_OPEN_MINUTES:-5}
       TELECONSULT_WAIT_GRACE_MINUTES: ${TELECONSULT_WAIT_GRACE_MINUTES:-15}
       SESSION_HOURS: ${SESSION_HOURS:-12}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      DOCTOR_CREDENTIAL_KEY: ${DOCTOR_CREDENTIAL_KEY:-}
+      LIVEKIT_ENABLED: ${LIVEKIT_ENABLED:-false}
+      LIVEKIT_MANAGED_ROOMS: "true"
+      LIVEKIT_API_URL: http://livekit:7880
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-ws://localhost:7880}
+      LIVEKIT_TOKEN_TTL_SECONDS: ${LIVEKIT_TOKEN_TTL_SECONDS:-600}
       ALLOWED_ORIGINS: http://localhost:${VITALSYNC_FRONTEND_PORT:-5188},http://127.0.0.1:${VITALSYNC_FRONTEND_PORT:-5188},http://localhost:${VITALSYNC_BACKEND_PORT:-8088}
     ports:
       - "127.0.0.1:${VITALSYNC_BACKEND_PORT:-8088}:8000"
@@ -43,7 +53,10 @@ services:
       timeout: 3s
       retries: 25
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
     restart: unless-stopped
     ports:
       - "127.0.0.1:${VITALSYNC_FRONTEND_PORT:-5188}:80"
@@ -55,6 +68,36 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+  livekit:
+    image: livekit/livekit-server:v1.13.11
+    profiles: ["video"]
+    restart: unless-stopped
+    environment:
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      LIVEKIT_CONFIG: |
+        port: 7880
+        room:
+          auto_create: false
+        log_level: info
+        keys:
+          "${LIVEKIT_API_KEY:-}": "${LIVEKIT_API_SECRET:-}"
+        rtc:
+          tcp_port: 7881
+          port_range_start: 50000
+          port_range_end: 50100
+        webhook:
+          api_key: "${LIVEKIT_API_KEY:-}"
+          urls:
+            - "http://backend:8000/api/livekit/webhook"
+    command: ["--bind", "0.0.0.0"]
+    ports:
+      - "127.0.0.1:7880:7880/tcp"
+      - "127.0.0.1:7881:7881/tcp"
+      - "127.0.0.1:50000-50100:50000-50100/udp"
+    depends_on:
+      backend:
+        condition: service_healthy
 volumes:
   vitalsync_data:
     # Existing application data. Refuse to silently create an empty replacement.

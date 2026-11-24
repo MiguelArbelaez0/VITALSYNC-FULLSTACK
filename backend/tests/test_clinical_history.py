@@ -26,10 +26,6 @@ def login_as(record,rotate=True):
     client=TestClient(app)
     result=client.post('/api/auth/login',json={'email':record['email'],'password':record['temporary_password']})
     assert result.status_code==200
-    if rotate:
-        new=uuid4().hex+'Aa1!'
-        changed=client.post('/api/doctor/password',json={'current_password':record['temporary_password'],'new_password':new,'confirm_password':new})
-        assert changed.status_code==200,changed.text
     return client
 
 
@@ -44,7 +40,7 @@ def test_all_professionals_provisioned_individually_existing_password_preserved(
         assert db.scalar(select(func.count()).select_from(DoctorAccount))==5
         for r in accounts:
             assert passwords.verify(r['temporary_password'],db.get(User,r['user_id']).password_hash)
-            assert db.get(DoctorCredentialState,r['user_id']).must_change_password
+            assert not db.get(DoctorCredentialState,r['user_id']).must_change_password
     for record in accounts:
         with login_as(record) as client:
             assert client.get('/api/doctor/me').status_code==200
@@ -69,25 +65,31 @@ def test_provision_avoids_case_insensitive_email_collisions():
         before=existing.password_hash
         result=provision(db,db.get(User,1))
         created=next(r for r in result['new_credentials'] if r['doctor_id']==1)
-        assert created['email']!='medico-1@vitalsync.demo'
+        assert created['email']!='juan.perez@doctor.vitalsync.demo'
+        assert created['email'].endswith('@doctor.vitalsync.demo')
+        assert '.' in created['email'].split('@',1)[0]
         assert existing.password_hash==before and existing.role=='PATIENT'
 
 
-def test_temporary_password_requires_rotation_and_is_not_in_api(accounts):
+def test_demo_doctor_can_enter_without_forced_rotation(accounts):
     record=accounts[0]
     with login_as(record,rotate=False) as client:
         me=client.get('/api/auth/me').json()
-        assert me['must_change_password'] is True
+        assert me['must_change_password'] is False
         assert record['temporary_password'] not in json.dumps(me)
-        assert client.get('/api/doctor/dashboard').status_code==403
-        wrong={'current_password':uuid4().hex,'new_password':uuid4().hex+'Aa1!'};wrong['confirm_password']=wrong['new_password']
-        assert client.post('/api/doctor/password',json=wrong).status_code==400
-        new=uuid4().hex+'Aa1!'
-        assert client.post('/api/doctor/password',json={'current_password':record['temporary_password'],'new_password':new,'confirm_password':new}).status_code==200
-        assert client.get('/api/auth/me').json()['must_change_password'] is False
         assert client.get('/api/doctor/dashboard').status_code==200
-        assert client.post('/api/auth/login',json={'email':record['email'],'password':record['temporary_password']}).status_code==401
-        assert client.post('/api/auth/login',json={'email':record['email'],'password':new}).status_code==200
+
+
+def test_medical_password_is_managed_only_by_administration(accounts):
+    record=accounts[0]
+    with login_as(record,rotate=False) as client:
+        assert client.get('/api/auth/me').json()['must_change_password'] is False
+        assert client.get('/api/doctor/dashboard').status_code == 200
+        new=uuid4().hex+'Aa1!'
+        payload={'current_password':record['temporary_password'],'new_password':new,'confirm_password':new}
+        assert client.post('/api/doctor/password',json=payload).status_code == 403
+        assert client.post('/api/auth/password',json=payload).status_code == 403
+        assert client.post('/api/auth/login',json={'email':record['email'],'password':record['temporary_password']}).status_code == 200
 
 
 def test_seed_only_explicit_demo_patients_is_idempotent_and_preserves_existing():

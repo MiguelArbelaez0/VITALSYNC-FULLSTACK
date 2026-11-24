@@ -1,4 +1,4 @@
-﻿param([string]$OutputRoot=(Join-Path ([Environment]::GetFolderPath('Desktop')) 'VITALSYNC-CREDENCIALES'))
+﻿param([string]$OutputRoot=(Join-Path ([Environment]::GetFolderPath('Desktop')) 'VITALSYNC-CREDENCIALES'), [switch]$AddAcademicProfiles)
 $ErrorActionPreference='Stop'
 Set-Location (Split-Path $PSScriptRoot -Parent)
 $repoRoot=[IO.Path]::GetFullPath((Get-Location).Path).TrimEnd('\') + '\'
@@ -20,7 +20,9 @@ foreach($sid in @($operatorSid,$systemSid)) {
 Set-Acl -LiteralPath $directory -AclObject $acl
 $remote="/tmp/doctor-initial-$stamp.credentials.json"
 $target=Join-Path $directory 'doctores.credentials.json'
-docker compose -p vitalsync exec -T backend python -m app.provision_doctors --output $remote
+$provisionArgs = @()
+if ($AddAcademicProfiles) { $provisionArgs += '--add-academic-profiles' }
+docker compose -p vitalsync exec -T backend python -m app.provision_doctors --output $remote @provisionArgs
 if($LASTEXITCODE -ne 0) { throw 'El aprovisionamiento no se completó; no se exportaron claves.' }
 $container=docker compose -p vitalsync ps -q backend
 docker cp "${container}:$remote" $target

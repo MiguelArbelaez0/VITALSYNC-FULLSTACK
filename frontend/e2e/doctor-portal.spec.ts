@@ -217,21 +217,6 @@ test("paciente y médico comparten reserva, finalización y cancelación persist
     clinically_attended: false,
   });
   if (info.project.name === "desktop") {
-    execFileSync("docker", ["restart", "vitalsync-db-1"], {
-      timeout: 60000,
-    });
-    await expect
-      .poll(
-        async () => {
-          try {
-            return (await request.get("/api/health")).status();
-          } catch {
-            return 0;
-          }
-        },
-        { timeout: 45000 },
-      )
-      .toBe(200);
     execFileSync("docker", ["restart", "vitalsync-test-backend-1"], {
       timeout: 60000,
     });

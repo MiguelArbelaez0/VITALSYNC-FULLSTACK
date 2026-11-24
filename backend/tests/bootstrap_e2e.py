@@ -31,6 +31,13 @@ def main():
         doctor=db.scalar(select(User).where(User.email=='medico@vitalsync.demo'))
         secret=temporary_password();doctor.password_hash=passwords.hash(secret)
         result['legacy']={'email':doctor.email,'password':secret}
+        if os.getenv('GOOGLE_E2E_TRANSPORT') == 'true':
+            from cryptography.hazmat.primitives.asymmetric import rsa
+            from cryptography.hazmat.primitives import serialization
+            key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+            result['google_private_key'] = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()).decode()
+            public = key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()
+            Path('/tmp/google-test-certificates.json').write_text(json.dumps({'e2e-fixture': public}))
         with os.fdopen(os.open('/tmp/e2e.credentials.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600),'w') as f:
             json.dump(result,f)
     print('Disposable database prepared; credentials exported privately')

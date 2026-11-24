@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, ForeignKey, Text, UniqueConstraint, CheckConstraint, Index, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
+from uuid import uuid4
 from app.db.session import Base
 
 def now():
@@ -44,6 +45,88 @@ class SessionToken(Base):
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
     expires_at = Column(DateTime(timezone=True), nullable=False)
 
+class GoogleIdentity(Base):
+    __tablename__ = 'google_identities'
+    sub = Column(String(255), primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, unique=True)
+    email = Column(String(254), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=now)
+
+class GoogleChallenge(Base):
+    __tablename__ = 'google_challenges'
+    token_hash = Column(String(64), primary_key=True)
+    purpose = Column(String(16), nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id'))
+    session_hash = Column(String(64))
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    consumed = Column(Boolean, nullable=False, default=False)
+    sub = Column(String(255))
+    email = Column(String(254))
+    name = Column(String(120))
+
+class SimulationRoom(Base):
+    __tablename__ = 'simulation_rooms'
+    id = Column(String(32), primary_key=True)
+    owner_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    guest_id = Column(Integer, ForeignKey('users.id'))
+    invite_hash = Column(String(64), unique=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    ended_at = Column(DateTime(timezone=True))
+
+
+class SimulationPatientAccess(Base):
+    __tablename__ = 'simulation_patient_access'
+    patient_id = Column(Integer, ForeignKey('patients.id', ondelete='CASCADE'), primary_key=True)
+
+
+class SimulationAttempt(Base):
+    __tablename__ = 'simulation_attempts'
+    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
+    window_start = Column(DateTime(timezone=True), nullable=False)
+    attempts = Column(Integer, nullable=False)
+
+
+class DoctorApplication(Base):
+    __tablename__ = 'doctor_applications'
+    id = Column(Integer, primary_key=True)
+    given_names = Column(String(60), nullable=False)
+    surnames = Column(String(60), nullable=False)
+    document_type = Column(String(2), nullable=False, default='CC')
+    document_number = Column(String(10), nullable=False)
+    professional_number = Column(String(50), nullable=False, unique=True)
+    specialty_id = Column(Integer, ForeignKey('specialties.id'), nullable=False)
+    contact_email = Column(String(254))
+    phone = Column(String(30), nullable=False)
+    bio = Column(Text, nullable=False)
+    institutional_email = Column(String(254), nullable=False, unique=True)
+    receipt_hash = Column(String(64), nullable=False, unique=True)
+    status = Column(String(16), nullable=False, default='PENDING')
+    version = Column(Integer, nullable=False, default=1)
+    doctor_id = Column(Integer, ForeignKey('doctors.id'), unique=True)
+    user_id = Column(Integer, ForeignKey('users.id'), unique=True)
+    submitted_at = Column(DateTime(timezone=True), nullable=False, default=now)
+    reviewed_at = Column(DateTime(timezone=True))
+    reviewed_by = Column(Integer, ForeignKey('users.id'))
+    review_reason = Column(Text)
+    verification_kind = Column(String(32))
+    __table_args__ = (
+        UniqueConstraint('document_type', 'document_number', name='uq_doctor_applications_document'),
+        CheckConstraint("status IN ('PENDING','APPROVED','REJECTED')", name='ck_doctor_applications_status'),
+        CheckConstraint("document_type = 'CC' AND document_number ~ '^[0-9]{6,10}$'", name='ck_doctor_applications_document'),
+    )
+
+class DoctorCredentialDelivery(Base):
+    __tablename__ = 'doctor_credential_deliveries'
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    actor_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    status = Column(String(16), nullable=False, default='PENDING')
+    encrypted_secret = Column(Text)
+    reason = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=now)
+    delivered_at = Column(DateTime(timezone=True))
+    __table_args__ = (CheckConstraint("status IN ('PENDING','DELIVERED','REVOKED')", name='ck_doctor_delivery_status'),)
+
 class Specialty(Base):
     __tablename__ = 'specialties'
     id = Column(Integer, primary_key=True)
@@ -57,6 +140,7 @@ class Doctor(Base):
     bio = Column(Text, nullable=False)
     modalities = Column(JSONB, nullable=False, default=lambda: ['PRESENCIAL'])
     enabled = Column(Boolean, default=True, nullable=False)
+    is_demo_doctor = Column(Boolean, nullable=False, default=False, server_default='false')
     __table_args__ = (
         CheckConstraint("jsonb_typeof(modalities) = 'array' AND modalities <> '[]'::jsonb AND modalities <@ '[\"PRESENCIAL\",\"VIRTUAL\"]'::jsonb", name='ck_doctors_modalities'),
         Index('ix_doctors_modalities_gin', 'modalities', postgresql_using='gin'),
@@ -173,8 +257,8 @@ class Appointment(Base):
     code = Column(String(30), nullable=False, unique=True)
     patient_id = Column(Integer, ForeignKey('patients.id'), nullable=False, index=True)
     doctor_id = Column(Integer, ForeignKey('doctors.id'), nullable=False, index=True)
-    hold_id = Column(Integer, ForeignKey('appointment_holds.id'), unique=True, nullable=False)
-    plan_id = Column(Integer, ForeignKey('plans.id'), nullable=False)
+    hold_id = Column(Integer, ForeignKey('appointment_holds.id'), unique=True, nullable=True)
+    plan_id = Column(Integer, ForeignKey('plans.id'), nullable=True)
     payment_id = Column(Integer, ForeignKey('payments.id'), unique=True)
     starts_at = Column(DateTime(timezone=True), nullable=False)
     ends_at = Column(DateTime(timezone=True), nullable=False)
@@ -185,6 +269,7 @@ class Appointment(Base):
     completion_source = Column(String(8))
     simulated_completed_at = Column(DateTime(timezone=True))
     clinically_attended = Column(Boolean, nullable=False, default=False, server_default='false')
+    is_demo_test = Column(Boolean, nullable=False, default=False, server_default='false')
     cancelled_at = Column(DateTime(timezone=True))
     cancelled_by = Column(Integer, ForeignKey('users.id'))
     cancellation_reason = Column(Text)
@@ -197,12 +282,14 @@ class Appointment(Base):
         CheckConstraint("(completion_source IS NULL AND simulated_completed_at IS NULL) OR (completion_source = 'DEMO' AND simulated_completed_at IS NOT NULL AND status = 'ATTENDED' AND clinically_attended = false)", name='ck_demo_completion'),
         CheckConstraint("modality IN ('PRESENCIAL','VIRTUAL')"),
         CheckConstraint('ends_at > starts_at'),
+        CheckConstraint("(is_demo_test AND hold_id IS NULL AND plan_id IS NULL AND payment_id IS NULL AND copay = 0 AND modality = 'VIRTUAL') OR (NOT is_demo_test AND hold_id IS NOT NULL AND plan_id IS NOT NULL)", name='ck_appointments_demo_test_financial_isolation'),
         Index('uq_confirmed_slot', 'doctor_id', 'starts_at', unique=True, postgresql_where=status.in_(['CONFIRMED', 'IN_PROGRESS', 'TECHNICAL_ERROR'])),
     )
 
 class VirtualConsultation(Base):
     __tablename__ = 'virtual_consultations'
     appointment_id = Column(Integer, ForeignKey('appointments.id', ondelete='CASCADE'), primary_key=True)
+    is_demo_test = Column(Boolean, nullable=False, default=False, server_default='false')
     patient_id = Column(Integer, ForeignKey('patients.id'), nullable=False, index=True)
     doctor_id = Column(Integer, ForeignKey('doctors.id'), nullable=False, index=True)
     status = Column(String(24), nullable=False, default='PROGRAMADA')
@@ -222,7 +309,30 @@ class VirtualConsultation(Base):
     incident_reason = Column(Text)
     incident_at = Column(DateTime(timezone=True))
     incident_resolved_at = Column(DateTime(timezone=True))
-    __table_args__ = (CheckConstraint("status IN ('PROGRAMADA','SALA_DISPONIBLE','PACIENTE_EN_ESPERA','MEDICO_EN_ESPERA','EN_ESPERA','EN_ATENCION','FINALIZADA','PACIENTE_AUSENTE','MEDICO_AUSENTE','ERROR_TECNICO','CANCELADA')", name='ck_virtual_consultations_status'),)
+    livekit_room_name = Column(String(80), nullable=False, default=lambda: 'vs-' + uuid4().hex)
+    livekit_patient_connected = Column(Boolean, nullable=False, default=False, server_default='false')
+    livekit_doctor_connected = Column(Boolean, nullable=False, default=False, server_default='false')
+    livekit_connection_state = Column(String(20), nullable=False, default='WAITING', server_default='WAITING')
+    livekit_last_event_at = Column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint("status IN ('PROGRAMADA','SALA_DISPONIBLE','PACIENTE_EN_ESPERA','MEDICO_EN_ESPERA','EN_ESPERA','EN_ATENCION','FINALIZADA','PACIENTE_AUSENTE','MEDICO_AUSENTE','ERROR_TECNICO','CANCELADA')", name='ck_virtual_consultations_status'),
+        UniqueConstraint('livekit_room_name', name='uq_virtual_consultations_livekit_room'),
+        CheckConstraint("livekit_connection_state IN ('WAITING','CONNECTED','RECONNECTING','DISCONNECTED')", name='ck_virtual_consultations_livekit_connection_state'),
+    )
+
+class LiveKitRoomEvent(Base):
+    __tablename__ = 'livekit_room_events'
+    id = Column(Integer, primary_key=True)
+    event_id = Column(String(80), nullable=False, unique=True)
+    appointment_id = Column(Integer, ForeignKey('appointments.id'), nullable=False, index=True)
+    participant_user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    participant_role = Column(String(8), nullable=False)
+    event_type = Column(String(32), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=now, server_default=func.now())
+    __table_args__ = (
+        CheckConstraint("participant_role IN ('PATIENT','DOCTOR')", name='ck_livekit_event_role'),
+        CheckConstraint("event_type IN ('participant_joined','participant_left')", name='ck_livekit_event_type'),
+    )
 
 class StatusHistory(Base):
     __tablename__ = 'appointment_status_history'

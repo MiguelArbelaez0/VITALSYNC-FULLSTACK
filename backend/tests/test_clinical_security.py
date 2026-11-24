@@ -21,25 +21,26 @@ def test_concurrent_provision_creates_each_account_once():
  assert sorted(counts)==[0,4]
  with SessionLocal() as db:assert db.scalar(select(func.count()).select_from(DoctorAccount))==5
 
-def test_password_rotation_revokes_other_sessions(accounts):
- record=accounts[0]
- with login_as(record,False) as first,login_as(record,False) as second:
+def test_patient_password_rotation_revokes_other_sessions(patient):
+ from conftest import PATIENT_TEST_PASSWORD
+ with TestClient(app) as second:
+  assert second.post('/api/auth/login',json={'email':'paciente@vitalsync.demo','password':PATIENT_TEST_PASSWORD}).status_code==200
   fresh=uuid4().hex+'Aa1!'
-  assert first.post('/api/doctor/password',json={'current_password':record['temporary_password'],'new_password':fresh,'confirm_password':fresh}).status_code==200
-  assert first.get('/api/doctor/me').status_code==200
+  assert patient.post('/api/auth/password',json={'current_password':PATIENT_TEST_PASSWORD,'new_password':fresh,'confirm_password':fresh}).status_code==200
+  assert patient.get('/api/auth/me').status_code==200
   assert second.get('/api/auth/me').status_code==401
 
-def test_failed_password_audit_rolls_back_password(accounts):
- record=accounts[0]
+def test_failed_patient_password_audit_rolls_back_password(patient):
+ from conftest import PATIENT_TEST_PASSWORD
  def fail(mapper,connection,target):
-  if target.action=='DOCTOR_PASSWORD_CHANGED':raise OperationalError('audit',{},Exception('Injected'))
- with login_as(record,False) as client:
-  event.listen(AuditEvent,'before_insert',fail)
-  try:
-   fresh=uuid4().hex+'Aa1!'
-   assert client.post('/api/doctor/password',json={'current_password':record['temporary_password'],'new_password':fresh,'confirm_password':fresh}).status_code==503
-  finally:event.remove(AuditEvent,'before_insert',fail)
- with SessionLocal() as db:assert passwords.verify(record['temporary_password'],db.get(User,record['user_id']).password_hash)
+  if target.action=='PATIENT_PASSWORD_CHANGED':raise OperationalError('audit',{},Exception('Injected'))
+ event.listen(AuditEvent,'before_insert',fail)
+ try:
+  fresh=uuid4().hex+'Aa1!'
+  assert patient.post('/api/auth/password',json={'current_password':PATIENT_TEST_PASSWORD,'new_password':fresh,'confirm_password':fresh}).status_code==503
+ finally:event.remove(AuditEvent,'before_insert',fail)
+ with SessionLocal() as db:assert passwords.verify(PATIENT_TEST_PASSWORD,db.scalar(select(User).where(User.email=='paciente@vitalsync.demo')).password_hash)
+
 
 def test_age_is_calculated_only_when_birth_date_exists(patient,medic):
  reserve(patient)

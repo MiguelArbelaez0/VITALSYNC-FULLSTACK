@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { lazy, Suspense, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import {
@@ -38,7 +38,7 @@ import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 import "./doctor.css";
 import "./clinical.css";
-import { DoctorPasswordForm } from "./DoctorPassword";
+const LiveKitConsultation = lazy(() => import("../appointments/LiveKitConsultation").then((module) => ({ default: module.LiveKitConsultation })));
 
 const prefix = "/doctor";
 const today = () => dayKey(new Date().toISOString());
@@ -74,6 +74,7 @@ function AppointmentCard({ item }: { item: MedicalAppointment }) {
           <small>
             {dateText(item.starts_at)} · {item.code}
           </small>
+          {item.is_demo_test && <small className="demo-appointment-label">Consulta académica de prueba</small>}
         </div>
       </div>
       <div className="medical-modality">
@@ -183,6 +184,7 @@ export function DoctorDashboard() {
               ? `${displayDay(dayKey(d.next_appointment.starts_at))} · ${timeText(d.next_appointment.starts_at)} · ${d.next_appointment.modality === "VIRTUAL" ? "Consulta virtual simulada" : "Consulta presencial"}`
               : "Las nuevas reservas aparecerán aquí cuando un paciente confirme su cita."}
           </p>
+          {d.next_appointment?.is_demo_test && <small className="demo-appointment-label">Consulta académica de prueba</small>}
         </div>
         {d.next_appointment && (
           <Go to={prefix + "/appointments/" + d.next_appointment.id}>
@@ -392,6 +394,7 @@ export function DoctorDetail() {
             }
           />
         </div>
+        {a.is_demo_test && <div className="notice demo-appointment-label"><strong>Consulta académica de prueba</strong><p>Sesión inmediata de demostración. Sin cobro ni consumo de cobertura.</p></div>}
         <dl>
           <div>
             <dt>Modalidad</dt>
@@ -438,7 +441,9 @@ export function DoctorDetail() {
         <div className="medical-actions">
           {a.modality === "VIRTUAL" && (
             <Go to={prefix + "/appointments/" + id + "/teleconsult"}>
-              {a.status === "ATTENDED"
+              {a.livekit_enabled && a.status !== "ATTENDED"
+                ? a.is_demo_test ? "Ingresar a videollamada" : "Iniciar videollamada"
+                : a.status === "ATTENDED"
                 ? "Ver registro de simulación"
                 : "Ver sala simulada"}
             </Go>
@@ -656,7 +661,7 @@ export function DoctorProfilePage() {
             {busy ? "Guardando…" : "Guardar biografía"}
           </Button>
         </form>
-        <DoctorPasswordForm />
+        <div className="notice"><h2>Acceso institucional</h2><p>En esta demostración académica, las credenciales médicas se gestionan por administración. Si necesitas recuperar tu acceso, solicita una nueva contraseña individual al administrador. Google está disponible únicamente para pacientes.</p></div>
       </section>
     </div>
   );
@@ -769,6 +774,7 @@ export function DoctorRoom() {
   if (q.isPending) return <Loading />;
   if (q.error) return <ErrorBox error={q.error} />;
   const a = q.data;
+  if (a.livekit_enabled) return <Suspense fallback={<Loading />}><LiveKitConsultation appointmentId={id ?? ""} role="DOCTOR" /></Suspense>;
   const state = a.virtual_state;
   const labels: Record<string, string> = {
     ADVANCE_DEMO_CLOCK: "Avanzar reloj de demostración",

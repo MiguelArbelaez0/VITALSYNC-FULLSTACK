@@ -75,6 +75,7 @@ const states: Record<string, string> = {
   PROCESSED: "Procesada (simulada)",
   FAILED: "Fallida",
   ISSUED: "Enlace emitido",
+  DELIVERED: "Entregada",
   USED: "Utilizado",
   REVOKED: "Revocado",
   PENDING: "Pendiente",
@@ -84,13 +85,33 @@ const states: Record<string, string> = {
   PRESENCIAL: "Presencial",
   PLAN: "Plan",
   COPAY: "Copago",
+  WAITING: "Esperando participantes",
+  CONNECTED: "Participantes conectados",
+  RECONNECTING: "Reconectando",
+  DISCONNECTED: "Desconectada",
+  FINALIZADA: "Finalizada",
 };
 const labels: Record<string, string> = {
+  given_names: "Nombres",
+  surnames: "Apellidos",
+  institutional_email: "Correo institucional",
+  contact_email: "Correo de contacto",
+  professional_number: "Registro profesional",
+  submitted_at: "Solicitud recibida",
+  reviewed_at: "Fecha de revisión",
+  reviewed_by: "Administrador responsable",
+  review_reason: "Motivo de revisión",
+  verification_kind: "Tipo de revisión",
+  delivery_id: "ID de entrega privada",
+  delivery_status: "Estado de entrega",
+  ACADEMIC_SIMULATED: "Revisión académica simulada",
+  MANUAL_REVIEW: "Revisión manual",
   id: "Identificador",
   name: "Nombre",
   email: "Correo",
   role: "Rol",
   status: "Estado",
+  status_label: "Estado de la consulta",
   created_at: "Fecha",
   starts_at: "Inicio",
   ends_at: "Fin",
@@ -99,6 +120,9 @@ const labels: Record<string, string> = {
   specialty: "Especialidad",
   plan: "Plan",
   modality: "Modalidad",
+  started_at: "Hora de inicio de atención",
+  finalized_at: "Hora de finalización",
+  duration_minutes: "Duración (minutos)",
   amount: "Importe",
   copay: "Copago",
   version: "Versión",
@@ -262,6 +286,15 @@ export function recovery(c: Context, r: Row) {
     confirm: true,
     description:
       "La contraseña actual no cambia. El operador emitirá un enlace de un solo uso mediante el comando local documentado.",
+  });
+}
+export function revokeGoogle(c: Context, r: Row) {
+  c.open({
+    title: "Revocar vinculación Google",
+    path: `/users/${r.user_id ?? r.id}/google-revoke`,
+    fields: [{ key: "current_password", label: "Tu contraseña de administrador", type: "password", required: true }],
+    confirm: true,
+    description: "Revoca la vinculación y todas las sesiones del usuario. Confirma tu identidad e indica el motivo. La contraseña del usuario se conserva.",
   });
 }
 export function account(c: Context, r: Row) {

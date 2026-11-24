@@ -1,6 +1,6 @@
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
-from fastapi import FastAPI, Depends, HTTPException, Request, Response, Query
+from fastapi import FastAPI, Depends, HTTPException, Request, Response, Query, Header, BackgroundTasks
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select, text, or_
@@ -10,18 +10,27 @@ from app.core.config import *
 from app.core.security import current_user, authenticated_user, doctor_for_user, passwords, create_session, digest
 from app.db.session import get_db
 from app.models.entities import *
-from app.schemas.requests import Login, Register, Profile, PaymentInput, Reconcile, HoldInput, Cancel, CancelPlanInput, TeleconsultationStatus
+from app.schemas.requests import Login, Register, Profile, PaymentInput, Reconcile, HoldInput, Cancel, CancelPlanInput, TeleconsultationStatus, DemoLiveKitTestInput
 from app.repositories.queries import *
 from app.services import booking, payments, plans as plan_services, teleconsultations
 from app.services import teleconsultation, plan_terms as plan_services_terms
+from app.services import livekit_consultations
+from app.services import demo_livekit
 from app.routers.doctor import router as doctor_router
 from app.routers.admin import router as admin_router
 from app.routers.recovery import router as recovery_router
+from app.routers.google_auth import router as google_router
+from app.routers.medical_registration import router as medical_registration_router
+from app.routers.simulation import admin_router as simulation_admin_router, router as simulation_router
 
-app = FastAPI(title='VITALSYNC · Portales integrados', version='1.0.0')
+app = FastAPI(title='VITALSYNC · Portales integrados', version='1.1.0')
 app.include_router(doctor_router)
 app.include_router(admin_router)
 app.include_router(recovery_router)
+app.include_router(google_router)
+app.include_router(medical_registration_router)
+app.include_router(simulation_router)
+app.include_router(simulation_admin_router)
 PRIVACY_NOTICE_VERSION = 'VITALSYNC-PRIVACIDAD-2026-11-v1'
 
 @app.middleware('http')
@@ -75,7 +84,7 @@ def health(db: Session = Depends(get_db, scope='function')):
 
 @app.get('/api/config')
 def config():
-    return dict(demo_mode=DEMO_MODE, hold_minutes=HOLD_MINUTES, cancellation_hours=CANCELLATION_HOURS, teleconsult_room_open_minutes=TELECONSULT_ROOM_OPEN_MINUTES, teleconsult_wait_grace_minutes=TELECONSULT_WAIT_GRACE_MINUTES, timezone='America/Bogota')
+    return dict(demo_mode=DEMO_MODE, livekit_enabled=livekit_consultations.enabled(), hold_minutes=HOLD_MINUTES, cancellation_hours=CANCELLATION_HOURS, teleconsult_room_open_minutes=TELECONSULT_ROOM_OPEN_MINUTES, teleconsult_wait_grace_minutes=TELECONSULT_WAIT_GRACE_MINUTES, timezone='America/Bogota')
 
 def profile_dict(db, u):
     p = db.get(Patient, u.id)
@@ -86,11 +95,12 @@ def profile_dict(db, u):
         email=u.email,
         role=u.role,
         doctor_id=doctor_for_user(db, u).id if u.role == 'DOCTOR' else None,
-        must_change_password=bool(db.get(DoctorCredentialState,u.id) and db.get(DoctorCredentialState,u.id).must_change_password) if u.role=='DOCTOR' else False,
+        must_change_password=False,
         phone=p.phone if p else '',
         document_type=p.document_type if p else None,
         document_masked=('•' * max(0, len(number) - 4) + number[-4:]) if number else None,
         has_document=bool(number),
+        demo_patient=bool(DEMO_MODE and db.get(DemoPatient, u.id)),
         account_status=u.status,
         registered_at=u.created_at,
         privacy_notice_version=u.privacy_notice_version,
@@ -100,6 +110,10 @@ def profile_dict(db, u):
 @app.post('/api/auth/register', status_code=201)
 def register(data: Register, response: Response, db: Session = Depends(get_db, scope='function')):
     email = data.email.lower()
+    from app.services.medical_registration import reserved_email
+    db.execute(text('SELECT pg_advisory_xact_lock(861993)'))
+    if reserved_email(db, email):
+        raise HTTPException(409, 'Este correo está reservado para una solicitud médica. Usa tu correo personal.')
     if db.scalar(select(User.id).where(func.lower(User.email) == email)) or db.scalar(
         select(Patient.id).where(
             Patient.document_type == data.document_type,
@@ -320,6 +334,16 @@ def confirm(hold_id: int, user=Depends(current_user, scope='function'), db: Sess
     a = booking.confirm(db, user, hold_id)
     return {'id': a.id, 'code': a.code, 'status': a.status}
 
+@app.get('/api/demo/livekit/doctors')
+def demo_livekit_doctors(user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
+    return demo_livekit.doctors(db, user)
+
+@app.post('/api/demo/livekit-sessions', status_code=201)
+def create_demo_livekit_session(data: DemoLiveKitTestInput, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
+    a = demo_livekit.create(db, user, data.doctor_id)
+    return {'id': a.id, 'code': a.code, 'status': a.status, 'doctor_id': a.doctor_id,
+            'starts_at': a.starts_at, 'is_demo_test': True, 'appointment_label': 'Consulta académica de prueba'}
+
 @app.get('/api/appointments')
 def appointments(view: str = Query('all', pattern='^(all|upcoming|completed|history|cancelled)$'), user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
     q = appointments_query(user.id)
@@ -343,10 +367,12 @@ def appointment(appointment_id: int, user=Depends(current_user, scope='function'
     result['location'] = 'Sede VITALSYNC Bogotá (ficticia)' if result['modality'] == 'PRESENCIAL' else None
     if result['modality'] == 'VIRTUAL':
         vc = db.get(VirtualConsultation, appointment_id)
-        demo_enabled = DEMO_MODE and teleconsultation.DEMO_MODE
+        demo_enabled = DEMO_MODE and teleconsultation.DEMO_MODE and not livekit_consultations.enabled()
         result['virtual_status'] = teleconsultation.display_status(vc) if vc else 'PROGRAMADA'
         result['virtual_state'] = teleconsultation.state_dict(db.get(Appointment, appointment_id), vc, demo_enabled) if vc else None
         result['demo_mode'] = demo_enabled
+        result['livekit_enabled'] = livekit_consultations.enabled()
+        result['livekit_connection_state'] = vc.livekit_connection_state if vc else None
         result['patient_present_at'] = vc.patient_present_at if vc else None
         result['doctor_present_at'] = vc.doctor_present_at if vc else None
     else:
@@ -366,15 +392,27 @@ def virtual_teleconsult(appointment_id: int, user=Depends(current_user, scope='f
     result['patient'] = user.name
     result['message'] = teleconsultation.PROVIDER.message
     result['virtual_status'] = teleconsultation.display_status(session)
-    demo_enabled = DEMO_MODE and teleconsultation.DEMO_MODE
+    demo_enabled = DEMO_MODE and teleconsultation.DEMO_MODE and not livekit_consultations.enabled()
     result['virtual_state'] = teleconsultation.state_dict(db.get(Appointment, appointment_id), session, demo_enabled)
     result['demo_mode'] = demo_enabled
+    result['livekit_enabled'] = livekit_consultations.enabled()
+    result['livekit_connection_state'] = session.livekit_connection_state
     result['patient_present_at'] = session.patient_present_at
     result['doctor_present_at'] = session.doctor_present_at
     return result
 
+@app.post('/api/appointments/{appointment_id}/livekit-token')
+def patient_livekit_token(appointment_id: int, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
+    return livekit_consultations.issue_token(db, appointment_id, user)
+
+@app.post('/api/livekit/webhook')
+async def livekit_webhook(request: Request, background: BackgroundTasks, authorization: str | None = Header(default=None), db: Session = Depends(get_db, scope='function')):
+    return livekit_consultations.process_webhook(db, await request.body(), authorization, background)
+
 @app.post('/api/appointments/{appointment_id}/teleconsult/status')
 def set_virtual_status(appointment_id: int, data: TeleconsultationStatus, user=Depends(current_user, scope='function'), db: Session = Depends(get_db, scope='function')):
+    if livekit_consultations.enabled():
+        raise HTTPException(409, 'Los cambios simulados están deshabilitados mientras la sala LiveKit está activa')
     if data.event:
         event = data.event
         return teleconsultation.apply_event(db, user, appointment_id, event, data.reason, demo_mode=DEMO_MODE and teleconsultation.DEMO_MODE)

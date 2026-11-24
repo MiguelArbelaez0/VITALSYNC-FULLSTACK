@@ -5,6 +5,7 @@ import {
   button,
   account,
   recovery,
+  revokeGoogle,
   type Context,
 } from "./AdminCore";
 export function PeopleAppointments({ c }: { c: Context }) {
@@ -64,10 +65,11 @@ export function PeopleAppointments({ c }: { c: Context }) {
                     account(c, r),
                   )}
                   {button(
-                    "Recuperar acceso",
-                    () => recovery(c, r),
+                    "Restablecer credenciales",
+                    () => open({title: "Restablecer credenciales médicas", path: `/accounts/${r.user_id}/doctor-credentials`, fields: [{key: "current_password", label: "Tu contraseña administrativa", type: "password"}], confirm: true, description: "Verifica la identidad del profesional. Se revoca la contraseña anterior y sus sesiones; una nueva contraseña individual queda pendiente de entrega privada."}),
                     !r.user_id || !r.enabled,
                   )}
+
                 </>
               )}
             </>
@@ -175,6 +177,14 @@ export function PeopleAppointments({ c }: { c: Context }) {
                     () => recovery(c, r),
                     r.status !== "ACTIVE",
                   )}
+                  {button("Revocar Google", () => revokeGoogle(c, r))}
+                  {button("Autorizar simulación", () => open({
+                    title: "Autorizar simulación para paciente de demostración",
+                    path: `/patients/${r.id}/simulation-access`,
+                    fields: [],
+                    confirm: true,
+                    description: "Confirma que la cuenta es ficticia. Esta autorización se limita a la sala de simulación y queda auditada.",
+                  }), r.status !== "ACTIVE")}
                 </>
               )}
             </>
@@ -218,6 +228,13 @@ export function PeopleAppointments({ c }: { c: Context }) {
           key: "status",
           label: "Estado",
           render: (r) => <State state={r.status} />,
+        },
+        {
+          key: "virtual_session",
+          label: "Sala virtual",
+          render: (r) => r.modality !== "VIRTUAL" ? "—" : r.virtual_session?.provider_enabled
+            ? <State state={r.virtual_session.connection_state} />
+            : "Videollamada no configurada",
         },
       ]}
       actions={(r) => (

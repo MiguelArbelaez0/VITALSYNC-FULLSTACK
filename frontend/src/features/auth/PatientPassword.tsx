@@ -1,14 +1,12 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { KeyRound, ShieldCheck } from "lucide-react";
+import { KeyRound } from "lucide-react";
 import { post } from "../../services/api";
 import { useAuth } from "../../hooks/useAuth";
 import { Button } from "../../components/ui/button";
-import { ErrorBox, Logo } from "../../components/common";
+import { ErrorBox } from "../../components/common";
 
-export function DoctorPasswordForm({ initial = false }: { initial?: boolean }) {
+export function PatientPasswordForm() {
   const { refresh } = useAuth();
-  const navigate = useNavigate();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirmation, setConfirmation] = useState("");
@@ -21,7 +19,7 @@ export function DoctorPasswordForm({ initial = false }: { initial?: boolean }) {
     setBusy(true);
     setSaved(false);
     try {
-      await post("/doctor/password", {
+      await post("/auth/password", {
         current_password: current,
         new_password: next,
         confirm_password: confirmation,
@@ -31,7 +29,6 @@ export function DoctorPasswordForm({ initial = false }: { initial?: boolean }) {
       setConfirmation("");
       setSaved(true);
       await refresh();
-      if (initial) navigate("/doctor", { replace: true });
     } catch (e) {
       setError(e);
     } finally {
@@ -48,12 +45,11 @@ export function DoctorPasswordForm({ initial = false }: { initial?: boolean }) {
     <form className="medical-password-form" onSubmit={submit}>
       <h2>
         <KeyRound size={22} />
-        {initial ? "Elige tu contraseña individual" : "Seguridad de tu cuenta"}
+        Seguridad de tu cuenta
       </h2>
       <p>
-        {initial
-          ? "Tu acceso inicial es temporal. Elige una contraseña propia antes de consultar la agenda o información clínica."
-          : "Puedes cambiar tu contraseña. Las demás sesiones de tu cuenta se cerrarán."}
+        Puedes cambiar tu contraseña. Las demás sesiones de tu cuenta se
+        cerrarán.
       </p>
       <label>
         Contraseña actual o inicial
@@ -98,25 +94,5 @@ export function DoctorPasswordForm({ initial = false }: { initial?: boolean }) {
         {busy ? "Guardando…" : "Guardar contraseña"}
       </Button>
     </form>
-  );
-}
-export function DoctorPasswordSetup() {
-  const { user, logout } = useAuth();
-  const [error, setError] = useState<unknown>(null);
-  return (
-    <main className="doctor-initial-access">
-      <Logo />
-      <section className="panel">
-        <span className="eyebrow">
-          <ShieldCheck size={18} /> PRIMER ACCESO MÉDICO
-        </span>
-        <h1>{user?.name}</h1>
-        <DoctorPasswordForm initial />
-        <ErrorBox error={error} />
-        <Button variant="outline" onClick={() => void logout().catch(setError)}>
-          Cerrar sesión
-        </Button>
-      </section>
-    </main>
   );
 }

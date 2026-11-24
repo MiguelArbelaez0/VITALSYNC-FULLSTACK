@@ -1,4 +1,5 @@
 ﻿# Disposable test services share the vitalsync project; NEVER reset the application database.
+param([string]$Filter)
 $ErrorActionPreference='Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
 $previousTestName=$env:VITALSYNC_TEST_DATABASE_NAME
@@ -39,7 +40,11 @@ try{
  $env:E2E_DOCTOR_CONTAINER='vitalsync-test-backend-1'
  $env:E2E_CREDENTIALS_FILE=$target
  Push-Location frontend
- try{npm run test:e2e; $testExit=$LASTEXITCODE}finally{Pop-Location}
+ try {
+  if ($Filter) { npm run test:e2e -- --grep $Filter }
+  else { npm run test:e2e }
+  $testExit=$LASTEXITCODE
+ } finally { Pop-Location }
 }finally{
  docker compose @composeArgs rm -s -f test-backend test-frontend
  if($LASTEXITCODE -ne 0){throw 'Revisa los servicios temporales; no borres volúmenes'}

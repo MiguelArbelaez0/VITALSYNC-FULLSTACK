@@ -106,7 +106,7 @@ describe("Portal médico", () => {
       "DoctorPrueba2026!",
     );
     await userEvent.click(
-      screen.getByRole("button", { name: "Iniciar sesión" }),
+      screen.getByRole("button", { name: /^Iniciar sesión$/ }),
     );
     expect(await screen.findByText("Destino médico")).toBeInTheDocument();
   });

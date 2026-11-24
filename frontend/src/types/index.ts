@@ -9,6 +9,7 @@ export interface User {
   document_type?: string | null;
   document_masked?: string | null;
   has_document?: boolean;
+  demo_patient?: boolean;
   account_status?: string;
   registered_at?: string;
   privacy_notice_version?: string | null;
@@ -95,7 +96,11 @@ export interface Appointment {
   completion_source?: "DEMO" | null;
   simulated_completed_at?: string | null;
   clinically_attended?: boolean;
+  is_demo_test?: boolean;
+  appointment_label?: string | null;
   demo_mode?: boolean;
+  livekit_enabled?: boolean;
+  livekit_connection_state?: "WAITING" | "CONNECTED" | "RECONNECTING" | "DISCONNECTED";
   patient_present_at?: string | null;
   doctor_present_at?: string | null;
   id: number;
@@ -147,6 +152,7 @@ export interface Notice {
 }
 export interface Config {
   demo_mode: boolean;
+  livekit_enabled?: boolean;
   hold_minutes: number;
   cancellation_hours: number;
   teleconsult_room_open_minutes: number;
@@ -162,8 +168,10 @@ export interface MedicalAppointment {
   id: number; code: string; patient_id: number; patient: string; doctor: string; specialty: string;
   starts_at: string; ends_at: string; duration_minutes: number; modality: Modality; status: string; version: number;
   completion_source: string | null; simulated_completed_at: string | null; clinically_attended: boolean;
+  is_demo_test?: boolean; appointment_label?: string | null;
   cancelled_at: string | null; cancellation_reason: string | null; history?: NonNullable<Appointment['history']>;
   virtual_status?: string; virtual_state?: Appointment['virtual_state']; demo_mode?: boolean;
+  livekit_enabled?: boolean; livekit_connection_state?: Appointment['livekit_connection_state'];
 }
 export interface MedicalDashboard {
   doctor: MedicalProfile; date: string; timezone: string;

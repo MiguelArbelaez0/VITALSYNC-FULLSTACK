@@ -2,6 +2,7 @@ import os
 import subprocess
 from uuid import uuid4
 import pytest
+from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlalchemy import text, select
 
@@ -9,6 +10,7 @@ from sqlalchemy import text, select
 TEST_DATABASE_NAME = os.getenv('VITALSYNC_TEST_DATABASE_NAME', 'vitalsync_test_audit_unconfigured')
 os.environ['DATABASE_URL'] = os.getenv('TEST_DATABASE_URL', os.getenv('DATABASE_URL', f'postgresql+psycopg://vitalsync:local_demo_change_me@db:5432/{TEST_DATABASE_NAME}'))
 os.environ['DEMO_MODE'] = 'true'
+os.environ['DOCTOR_CREDENTIAL_KEY'] = Fernet.generate_key().decode()
 from app.main import app
 from app.db.session import SessionLocal, engine
 from app.models.entities import *

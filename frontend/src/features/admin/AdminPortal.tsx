@@ -19,6 +19,7 @@ import {
   type Options,
   type Choice,
 } from "./AdminCore";
+import { MedicalApplications } from "./MedicalApplications";
 import { PeopleAppointments } from "./PeopleAppointments";
 import { SchedulingPlans, ScheduleActions, editPlan } from "./SchedulingPlans";
 import { Finance } from "./Finance";
@@ -28,6 +29,8 @@ import "./admin.css";
 const titles: Record<string, string> = {
   dashboard: "Dashboard administrativo",
   doctors: "Médicos",
+  "doctor-applications": "Solicitudes médicas",
+  "doctor-credential-deliveries": "Entregas de credenciales médicas",
   patients: "Pacientes",
   appointments: "Citas",
   availability: "Disponibilidad médica",
@@ -108,6 +111,11 @@ export default function AdminPortal() {
   const opts = useQuery({
     queryKey: ["admin", "options"],
     queryFn: () => api<Options>("/admin/options"),
+    retry: false,
+  });
+  const appConfig = useQuery({
+    queryKey: ["config"],
+    queryFn: () => api<{ demo_mode: boolean }>("/config"),
     retry: false,
   });
   const query = params.toString();
@@ -223,6 +231,8 @@ export default function AdminPortal() {
         </p>
       </>
     );
+  else if (["doctor-applications", "doctor-credential-deliveries"].includes(section))
+    content = <MedicalApplications c={c} academic={appConfig.data?.demo_mode !== false} />;
   else if (["doctors", "patients", "appointments"].includes(section))
     content = <PeopleAppointments c={c} />;
   else if (["availability", "plans"].includes(section))
@@ -283,19 +293,22 @@ export default function AdminPortal() {
                     path: "/doctors",
                     fields: [
                       c.doctorFields[0],
-                      {
-                        key: "email",
-                        label: "Correo individual",
-                        type: "email",
-                      },
+                      ...(appConfig.data?.demo_mode === false
+                        ? [{
+                            key: "email",
+                            label: "Correo institucional",
+                            type: "email",
+                          }]
+                        : []),
                       ...c.doctorFields.slice(1),
                     ],
                     initial: {
                       enabled: true,
                       modalities: ["VIRTUAL", "PRESENCIAL"],
                     },
-                    description:
-                      "Se creará una cuenta individual y una solicitud de recuperación privada. No se publican contraseñas en la aplicación.",
+                    description: appConfig.data?.demo_mode
+                      ? "Se creará una cuenta individual autorizada con correo nombre.apellido@doctor.vitalsync.demo; si hay coincidencia se añade un identificador estable. Se genera una contraseña individual para entrega privada. No se publican contraseñas en la aplicación."
+                      : "Se creará una cuenta individual autorizada con el correo institucional indicado y una contraseña individual para entrega privada. No se publican contraseñas en la aplicación.",
                   })
                 }
               >
@@ -343,6 +356,7 @@ export default function AdminPortal() {
         >
           {[
             "doctors",
+            "doctor-applications",
             "patients",
             "appointments",
             "plans",
@@ -372,6 +386,7 @@ export default function AdminPortal() {
               { value: "true", label: "Activo" },
               { value: "false", label: "Inactivo" },
             ])}
+          {section === "doctor-applications" && choiceFilter("status", "Estado de solicitud", [{value:"PENDING",label:"Pendiente"},{value:"APPROVED",label:"Aprobada"},{value:"REJECTED",label:"Rechazada"}])}
           {section === "patients" &&
             choiceFilter("status", "Estado de cuenta", [
               { value: "ACTIVE", label: "Activo" },

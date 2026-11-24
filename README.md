@@ -23,7 +23,7 @@ powershell -ExecutionPolicy Bypass -File infrastructure/Start-Vitalsync.ps1
 | Servicio | Dirección local predeterminada |
 | --- | --- |
 | Portal React | http://localhost:5188 |
-| Login compartido | http://localhost:5188/login |
+| Autenticación compartida | http://localhost:5188/auth |
 | Portal paciente | http://localhost:5188/portal |
 | Portal médico | http://localhost:5188/doctor |
 | Portal administrador | http://localhost:5188/admin |
@@ -40,7 +40,7 @@ Todos los puertos publicados se vinculan exclusivamente a `127.0.0.1`. Se compro
 
 ## Qué puedes hacer
 
-- Landing, registro público e independiente exclusivo de pacientes, login por correo y contraseña, logout, sesión persistente y rutas protegidas.
+- Landing, registro público de pacientes y solicitudes médicas pendientes de aprobación, login por correo y contraseña, logout, sesión persistente y rutas protegidas.
 - Dashboard con plan, vencimiento, próxima cita, conteo de próximas y notificaciones reales.
 - Consultar y actualizar nombre y teléfono del perfil; las cuentas históricas pueden añadir una cédula desde Mi perfil.
 - Ver planes Básico, Estándar y Premium; activar, renovar, cambiar cobertura y cancelar el plan activo mediante pago simulado y una acción común para cualquier identificador de plan.
@@ -52,17 +52,27 @@ Todos los puertos publicados se vinculan exclusivamente a `127.0.0.1`. Se compro
 - Confirmar transaccionalmente, consultar e imprimir el comprobante desde el navegador.
 - Consultar Mis citas, detalle, historial y canceladas; cancelar con motivo, confirmación expresa y control de versión.
 - Gestionar el ciclo de vida de una teleconsulta simulada: abrir sala, registrar presencias independientes, iniciar/finalizar, reportar ausencias y recuperar incidencias técnicas; no se conecta audio ni video.
+- En la rama de desarrollo v1.1.0, habilitar una videollamada LiveKit autohospedada para citas virtuales existentes; con LiveKit configurado, ofrece preingreso de cámara/micrófono, conexión WebRTC entre paciente y médico asignado y finalización formal. La simulación de v1.0.0 permanece disponible cuando LiveKit está desactivado.
 - Leer notificaciones guardadas en PostgreSQL.
 - Administrar desde `/admin` médicos, pacientes (datos administrativos), citas, disponibilidad, catálogo de planes, pagos simulados, devoluciones simuladas, auditoría, permisos y datos de contacto institucionales.
 - Limitar administradores por módulo en el servidor. El rol administrador no puede leer historias clínicas; esa información requiere al médico tratante autorizado.
 
 Las retenciones no son citas. Los pagos pendientes no activan planes ni confirman citas. La cancelación de un plan es inmediata porque estos planes no tienen renovación automática: termina la cobertura para nuevas reservas, conserva citas, pagos e historial, y registra titular, plan, transición, fecha y auditoría. Los pagos pendientes o retenciones activas deben resolverse antes. No se genera una devolución automática.
 
+Para habilitar la sala local de video, configura claves aleatorias en `.env` y activa el perfil Compose:
+
+```powershell
+.\infrastructure\Configure-LiveKit.ps1
+docker compose --profile video up -d --build
+```
+
+La configuración local usa puertos de loopback y no admite llamadas desde Internet u otras redes. La guía de permisos, medios, puertos, pruebas y limitaciones está en [docs/video-consultations-v1.1.md](docs/video-consultations-v1.1.md).
+
 ## Stack y estructura
 
-Frontend: React 19, Vite 8, TypeScript 6, React Router 7, Tailwind 4, componentes locales shadcn/ui Button y Dialog basados en Radix/CVA, TanStack Query, React Hook Form, Zod y Lucide. `package-lock.json` fija las versiones resueltas.
+Frontend: React 19, Vite 8, TypeScript 6, React Router 7, Tailwind 4, componentes locales shadcn/ui Button y Dialog basados en Radix/CVA, TanStack Query, React Hook Form, Zod y Lucide. `@livekit/components-react`, sus estilos y `livekit-client` se cargan bajo demanda en la sala. `package-lock.json` fija las versiones resueltas.
 
-Backend: Python 3.13 en Docker, FastAPI, Pydantic 2, SQLAlchemy 2, Alembic, psycopg y Argon2id con pwdlib. `requirements.txt` expresa compatibilidad y `requirements.lock` fija el entorno Linux probado en Docker. PostgreSQL 17 con `btree_gist`, claves foráneas, checks, índices y exclusiones de solapamiento.
+Backend: Python 3.13 en Docker, FastAPI, Pydantic 2, SQLAlchemy 2, Alembic, psycopg, SDK oficial `livekit-api` y Argon2id con pwdlib. `requirements.txt` expresa compatibilidad y `requirements.lock` fija el entorno Linux probado en Docker. PostgreSQL 17 con `btree_gist`, claves foráneas, checks, índices y exclusiones de solapamiento.
 
 ```text
 frontend/src/
@@ -231,7 +241,7 @@ No hay recuperación por correo. El administrador solicita una recuperación en 
 
 ## Límites de la demostración
 
-La administración y las devoluciones operan con registros simulados: no realizan transferencias ni procesan pagos reales. La sala virtual solo demuestra estados guardados en la base de datos; no usa audio ni video, no pide permisos del dispositivo ni genera enlaces. No se incluye correo, notificación push, app nativa ni despliegue público.
+La administración y las devoluciones operan con registros simulados: no realizan transferencias ni procesan pagos reales. Con LiveKit desactivado, la teleconsulta conserva el ciclo de demostración v1.0.0 sin usar audio o video. En esta rama v1.1.0, al activar el perfil `video`, las citas virtuales usan una sala WebRTC privada. La prueba de dos navegadores pasó con medios sintéticos y con cámara/micrófono físicos de este equipo; en ambos casos verificó video y pistas de audio activas en las dos direcciones, reconexión y finalización. No se midió la calidad audible, ni se validaron llamadas entre redes distintas. No se incluye correo, notificación push, app nativa ni despliegue público.
 
 El comprobante se imprime con el navegador (puedes elegir Guardar como PDF); no hay un generador de PDF en el servidor. Las notificaciones y pagos listan las últimas 100 operaciones. Las retenciones vencidas dejan de bloquear por su fecha, sin requerir un proceso programado. El seed amplía la agenda al reiniciar; no sustituye un módulo administrativo.
 
@@ -246,12 +256,16 @@ La implementación médica comparte la aplicación y las sesiones existentes. Pa
 docker compose -p vitalsync up -d --build --wait
 ```
 
-Con `DEMO_MODE=true`, el seed vincula `medico@vitalsync.demo` al Dr. Alejandro Méndez sin duplicar profesionales ni sobrescribir contraseñas. Inicia sesión en `/login`; el médico accede a `/doctor` y el paciente a `/portal`.
+El login compartido dirige al paciente a `/portal`, al médico a `/doctor` y al administrador a `/admin`. El registro permite elegir Paciente o Médico: el paciente crea su cuenta; el médico presenta una solicitud pendiente, con correo institucional generado, que exige aprobación administrativa y entrega privada de una contraseña individual. Google queda disponible únicamente para pacientes. Las cuentas y contraseñas existentes se conservan; el médico no cambia su contraseña desde el portal y solicita restablecimiento a administración.
+
+Consulta el [registro unificado, aprobación médica y entrega segura de credenciales](docs/auth-registration-v1.1.md). Antes de usar aprobaciones nuevas, ejecutar `.\infrastructure\Configure-DoctorCredentials.ps1` y reconstruir el backend.
 
 Consulta [arquitectura, rutas, migración, pruebas y acceso local del portal médico](docs/doctor-portal.md).
 
 
 ## Docker unificado
+
+VITALSYNC v1.1.0 incluye una **Sala de simulación** de LiveKit para cuentas académicas autorizadas. Permite probar cámara, micrófono y pantalla compartida a solas o mediante una invitación privada, sin generar una cita ni un pago. El inicio y los controles son comunes a la videoconsulta. Consulta [videollamadas, configuración local y alcance académico](docs/video-consultations-v1.1.md).
 
 El único despliegue permanente es `vitalsync`, con `frontend`, `backend` y `db`. Los tres portales comparten la API, el login y la base principal existente. El volumen principal es externo y queda fijado por nombre; no se genera una base vacía si desaparece.
 

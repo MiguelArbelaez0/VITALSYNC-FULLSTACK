@@ -1,7 +1,7 @@
 """Medical portal. Every professional id comes from the authenticated session."""
 from datetime import date
 from typing import Literal
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, BackgroundTasks
 from pydantic import Field
 from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
@@ -10,7 +10,7 @@ from app.core.config import DEMO_MODE
 from app.db.session import get_db
 from app.models.entities import Appointment, User, Availability, DoctorBlock, VirtualConsultation, AuditEvent, DoctorCredentialState, SessionToken, now
 from app.schemas.requests import Input, Cancel, TeleconsultationStatus, DoctorPasswordChange
-from app.services import doctor_portal as service, teleconsultation, clinical_history
+from app.services import doctor_portal as service, teleconsultation, clinical_history, livekit_consultations
 
 router = APIRouter(prefix='/api/doctor', tags=['doctor'])
 
@@ -113,16 +113,33 @@ def room(appointment_id: int, doctor=Depends(current_doctor, scope='function'), 
     vc = db.get(VirtualConsultation, a.id)
     if a.modality != 'VIRTUAL' or not vc or vc.doctor_id != doctor.id or vc.patient_id != a.patient_id:
         raise HTTPException(404, 'Sala virtual no encontrada')
-    demo = DEMO_MODE and teleconsultation.DEMO_MODE
+    demo = DEMO_MODE and teleconsultation.DEMO_MODE and not livekit_consultations.enabled()
     state = teleconsultation.state_dict(a, vc, demo)
     if not demo:
         state['available_actions'] = []
     return {**service.appointment_dict(db, doctor, a), 'virtual_status': teleconsultation.display_status(vc),
-            'virtual_state': state, 'demo_mode': demo, 'history': service.history(db, a)}
+            'virtual_state': state, 'demo_mode': demo, 'livekit_enabled': livekit_consultations.enabled(),
+            'livekit_connection_state': vc.livekit_connection_state, 'history': service.history(db, a)}
+
+
+@router.post('/appointments/{appointment_id}/livekit-token')
+def doctor_livekit_token(appointment_id: int, doctor=Depends(current_doctor, scope='function'), user=Depends(authenticated_user, scope='function'), db: Session = Depends(get_db, scope='function')):
+    return livekit_consultations.issue_token(db, appointment_id, user, doctor.id)
+
+
+@router.post('/appointments/{appointment_id}/livekit-finalize')
+def finalize_livekit(appointment_id: int, background_tasks: BackgroundTasks, doctor=Depends(current_doctor, scope='function'), user=Depends(authenticated_user, scope='function'), db: Session = Depends(get_db, scope='function')):
+    result = livekit_consultations.finalize(db, appointment_id, user, doctor.id)
+    # Repeated idempotent requests also retry room closure if a previous
+    # LiveKit API call failed after PostgreSQL had already committed.
+    background_tasks.add_task(livekit_consultations.close_room, result['room_name'])
+    return {key: value for key, value in result.items() if key != 'room_name'}
 
 
 @router.post('/appointments/{appointment_id}/teleconsult/events')
 def transition(appointment_id: int, data: TeleconsultationStatus, doctor=Depends(current_doctor, scope='function'), user=Depends(authenticated_user, scope='function'), db: Session = Depends(get_db, scope='function')):
+    if livekit_consultations.enabled():
+        raise HTTPException(409, 'Los cambios simulados están deshabilitados mientras la sala LiveKit está activa')
     if not data.event:
         raise HTTPException(422, 'Indica un evento de sala virtual')
     return teleconsultation.apply_event(db, user, appointment_id, data.event, data.reason,
@@ -141,18 +158,4 @@ def clinical_visit(patient_id: int, encounter_id: int, doctor=Depends(current_do
 
 @router.post('/password')
 def change_password(data: DoctorPasswordChange, request: Request, user=Depends(authenticated_user,scope='function'), db: Session=Depends(get_db,scope='function')):
-    professional=doctor_for_user(db,user)
-    user=db.scalar(select(User).where(User.id==user.id).with_for_update().execution_options(populate_existing=True))
-    if not passwords.verify(data.current_password,user.password_hash):
-        raise HTTPException(400,'La contraseña actual no es correcta')
-    if passwords.verify(data.new_password,user.password_hash):
-        raise HTTPException(422,'Elige una contraseña distinta de la actual')
-    user.password_hash=passwords.hash(data.new_password)
-    state=db.get(DoctorCredentialState,user.id)
-    if state:
-        state.must_change_password=False
-        state.changed_at=now()
-    current_hash=digest(request.cookies.get('vitalsync_session',''))
-    db.execute(delete(SessionToken).where(SessionToken.user_id==user.id,SessionToken.token_hash!=current_hash))
-    db.add(AuditEvent(actor_id=user.id,action='DOCTOR_PASSWORD_CHANGED',entity_id=professional.id))
-    return {'message':'Contraseña actualizada. Las demás sesiones de esta cuenta se cerraron.'}
+    raise HTTPException(403, 'El restablecimiento de credenciales médicas se solicita a administración; no está disponible desde el portal.')

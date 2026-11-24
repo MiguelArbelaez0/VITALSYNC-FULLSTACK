@@ -1,6 +1,8 @@
 """Local administrative provisioning. Existing accounts, passwords and links are preserved."""
 import secrets
-from sqlalchemy import select, text, func
+import re
+import unicodedata
+from sqlalchemy import select, text, func, inspect
 from app.models.entities import Doctor, DoctorAccount, DoctorCredentialState, User, AuditEvent
 from app.core.security import passwords
 
@@ -12,7 +14,31 @@ def temporary_password():
             return value
 
 
-def provision(db, actor, domain='vitalsync.demo'):
+def _doctor_email_name(name, doctor_id):
+    normalized = unicodedata.normalize('NFKD', name)
+    ascii_name = ''.join(char for char in normalized if not unicodedata.combining(char))
+    parts = re.findall(r'[a-zA-Z0-9]+', ascii_name.lower())
+    if parts and parts[0] in {'dr', 'dra', 'doctor', 'doctora'}:
+        parts = parts[1:]
+    local = f'{parts[0]}.{parts[-1]}' if len(parts) >= 2 else f'medico.{doctor_id}'
+    return local
+
+
+def available_doctor_email(db, name, doctor_id, domain='doctor.vitalsync.demo'):
+    from app.models.entities import DoctorApplication
+    db.execute(text('SELECT pg_advisory_xact_lock(861993)'))
+    base = _doctor_email_name(name, doctor_id)
+    suffix = 0
+    while True:
+        local = base if suffix == 0 else f'{base}.{doctor_id}' + (f'.{suffix}' if suffix > 1 else '')
+        email = f'{local}@{domain.lower()}'
+        reserved = inspect(db.connection()).has_table('doctor_applications') and db.scalar(select(DoctorApplication.id).where(DoctorApplication.institutional_email == email.lower()))
+        if not reserved and not db.scalar(select(User.id).where(func.lower(User.email) == email.lower())):
+            return email
+        suffix += 1
+
+
+def provision(db, actor, domain='doctor.vitalsync.demo'):
     if not actor or actor.role != 'ADMIN' or actor.status != 'ACTIVE':
         raise ValueError('Se requiere un actor administrativo activo para aprovisionar')
     db.execute(text('SELECT pg_advisory_xact_lock(861993)'))
@@ -27,18 +53,12 @@ def provision(db, actor, domain='vitalsync.demo'):
                 raise ValueError(f'Vinculación incompatible en profesional {doctor.id}; se requiere revisión administrativa')
             preserved.append(doctor.id)
             continue
-        suffix = 0
-        while True:
-            local = f'medico-{doctor.id}' + (f'-{suffix}' if suffix else '')
-            email = f'{local}@{domain}'
-            if not db.scalar(select(User.id).where(func.lower(User.email) == email.lower())):
-                break
-            suffix += 1
+        email = available_doctor_email(db, doctor.name, doctor.id, domain)
         secret = temporary_password()
         user = User(email=email,name=doctor.name,role='DOCTOR',status='ACTIVE' if doctor.enabled else 'DISABLED',password_hash=passwords.hash(secret))
         db.add(user); db.flush()
         db.add(DoctorAccount(user_id=user.id,doctor_id=doctor.id)); db.flush()
-        db.add(DoctorCredentialState(user_id=user.id,must_change_password=True))
+        db.add(DoctorCredentialState(user_id=user.id,must_change_password=False))
         db.add(AuditEvent(actor_id=actor.id,action='DOCTOR_ACCOUNT_PROVISIONED',entity_id=doctor.id))
         created.append(dict(doctor_id=doctor.id,user_id=user.id,name=doctor.name,email=email,temporary_password=secret,enabled=doctor.enabled))
     db.flush()

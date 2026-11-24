@@ -20,7 +20,8 @@ def test_upgrade_repairs_legacy_finalized_room_without_changing_scheduled_date()
     environment = {**os.environ, 'DATABASE_URL': url.render_as_string(hide_password=False)}
     try:
         subprocess.run(['alembic', 'upgrade', '20261114_patient_identity'], env=environment, check=True, capture_output=True)
-        subprocess.run(['python', '-m', 'app.seed'], env=environment, check=True, capture_output=True)
+        seeded = subprocess.run(['python', '-m', 'app.seed'], env=environment, capture_output=True, text=True)
+        assert seeded.returncode == 0, seeded.stdout + seeded.stderr
         with isolated.begin() as connection:
             assert connection.scalar(text('SELECT current_schema()')) == schema
             assert connection.scalar(text("SELECT to_regclass('appointments')::oid = to_regclass(:table)::oid"), {'table': schema + '.appointments'})
@@ -64,7 +65,8 @@ def test_each_divergent_branch_upgrades_to_the_single_merge_head(branch_head):
     environment = {**os.environ, 'DATABASE_URL': url.render_as_string(hide_password=False)}
     try:
         subprocess.run(['alembic', 'upgrade', '20261114_patient_identity'], env=environment, check=True, capture_output=True)
-        subprocess.run(['python', '-m', 'app.seed'], env=environment, check=True, capture_output=True)
+        seeded = subprocess.run(['python', '-m', 'app.seed'], env=environment, capture_output=True, text=True)
+        assert seeded.returncode == 0, seeded.stdout + seeded.stderr
         for step, target in enumerate((branch_head, 'head', 'head')):
             if step == 1:
                 with isolated.begin() as connection:
@@ -89,7 +91,7 @@ def test_each_divergent_branch_upgrades_to_the_single_merge_head(branch_head):
             assert result.returncode == 0, f'alembic upgrade {target} failed:\n{result.stdout}\n{result.stderr}'
         with isolated.connect() as connection:
             revisions = connection.execute(text('SELECT version_num FROM alembic_version')).scalars().all()
-            assert revisions == ['20261120_admin_portal']
+            assert revisions == ['20261125_simulation_rooms']
             repaired = connection.execute(text('SELECT status,completion_source,simulated_completed_at,starts_at FROM appointments WHERE id=:id'), {'id': appointment_id}).mappings().one()
             assert repaired['status'] == 'ATTENDED' and repaired['completion_source'] == 'DEMO'
             assert repaired['simulated_completed_at'] < repaired['starts_at']

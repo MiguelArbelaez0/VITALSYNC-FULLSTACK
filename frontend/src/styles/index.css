@@ -1393,6 +1393,13 @@ dd {
   border-bottom-color: #228a96;
   font-weight: 600;
 }
+.demo-call-panel { margin: 20px 0; border-color: #b8e4e4; }
+.demo-call-panel h2 { margin: 8px 0; color: #124451; }
+.demo-call-panel > p { color: #58727c; max-width: 850px; }
+.demo-call-doctors { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.demo-call-doctors .btn { white-space: normal; }
+.demo-appointment-label { color: #176c76 !important; font-weight: 600; }
+.dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
 .appointments-list {
   display: flex;
   flex-direction: column;
@@ -1684,6 +1691,36 @@ dd {
 .form-content h1 {
   font-size: 30px;
   margin: 12px 0;
+}
+.auth-mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin: 22px 0 20px;
+  padding: 4px;
+  border: 1px solid #d7e8e9;
+  border-radius: 12px;
+  background: #f1f7f9;
+}
+.auth-mode-switch button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #365763;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.auth-mode-switch button[aria-pressed="true"] {
+  background: #fff;
+  color: #0a5365;
+  box-shadow: 0 1px 4px #0a53651a;
+}
+.auth-mode-switch button:focus-visible {
+  outline: 3px solid #138d96;
+  outline-offset: 2px;
 }
 .form-content > p {
   font-size: 13px;

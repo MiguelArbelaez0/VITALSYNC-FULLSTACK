@@ -1,0 +1,13 @@
+# Explicit test-only provider. Never include this file in the primary deployment.
+services:
+  test-backend:
+    environment:
+      GOOGLE_CLIENT_ID: controlled-client.apps.googleusercontent.com
+      GOOGLE_E2E_TRANSPORT: "true"
+      PYTHONPATH: /app:/app/tests
+    command: ["sh", "-c", "alembic upgrade head && python -m app.seed && uvicorn google_e2e_app:app --host 0.0.0.0 --port 8000"]
+  test-frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_GOOGLE_CLIENT_ID: controlled-client.apps.googleusercontent.com

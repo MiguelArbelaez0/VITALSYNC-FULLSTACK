@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -9,6 +9,8 @@ import { post } from "../../services/api";
 import { useAuth } from "../../hooks/useAuth";
 import { Button } from "../../components/ui/button";
 import { ErrorBox, Logo } from "../../components/common";
+import { GoogleSignIn } from "./GoogleAuth";
+import { MedicalRegistration } from "./MedicalRegistration";
 
 const authFields = z.object({
   email: z.email("Ingresa un correo válido"),
@@ -69,23 +71,28 @@ type Values = z.infer<typeof authFields>;
 
 export function Auth({ register = false }: { register?: boolean }) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isRegister = searchParams.has("mode")
+    ? searchParams.get("mode") === "register"
+    : register;
   const { refresh } = useAuth();
   const [error, setError] = useState<unknown>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [registrationRole, setRegistrationRole] = useState<"PATIENT" | "DOCTOR">("PATIENT");
   const {
     register: field,
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<Values>({
-    resolver: zodResolver(authSchema(register)),
+    resolver: zodResolver(authSchema(isRegister)),
     defaultValues: { document_type: "CC", privacy_accepted: false },
   });
 
   async function submit(values: Values) {
     setError(null);
     try {
-      const payload = register
+      const payload = isRegister
         ? {
             given_names: values.given_names?.trim(),
             surnames: values.surnames?.trim(),
@@ -98,18 +105,17 @@ export function Auth({ register = false }: { register?: boolean }) {
           }
         : { email: values.email, password: values.password };
       const account = await post<User>(
-        "/auth/" + (register ? "register" : "login"),
+        "/auth/" + (isRegister ? "register" : "login"),
         payload,
       );
       await refresh();
-      navigate(
-        account.role === "ADMIN"
-          ? "/admin"
-          : account.role === "DOCTOR"
-            ? "/doctor"
-            : "/portal",
-        { state: { registrationComplete: register } },
-      );
+      const destination = {
+        ADMIN: "/admin",
+        DOCTOR: "/doctor",
+        PATIENT: "/portal",
+      }[account.role];
+      if (!destination) throw new Error("El rol de la cuenta no está disponible");
+      navigate(destination, { state: { registrationComplete: isRegister } });
     } catch (e) {
       setError(e);
     }
@@ -154,22 +160,45 @@ export function Auth({ register = false }: { register?: boolean }) {
         </Link>
         <div className="form-content">
           <span className="eyebrow">TU ESPACIO DE BIENESTAR</span>
+          <div className="auth-mode-switch" aria-label="Autenticación">
+            <button
+              type="button"
+              aria-label="Mostrar inicio de sesión"
+              aria-pressed={!isRegister}
+              onClick={() => setSearchParams({ mode: "login" })}
+            >
+              Iniciar sesión
+            </button>
+            <button
+              type="button"
+              aria-label="Mostrar registro"
+              aria-pressed={isRegister}
+              onClick={() => setSearchParams({ mode: "register" })}
+            >
+              Crear cuenta
+            </button>
+          </div>
           <h1>
-            {register
-              ? "Crea tu cuenta de paciente"
+            {isRegister
+              ? registrationRole === "DOCTOR" ? "Solicita tu cuenta médica" : "Crea tu cuenta de paciente"
               : "Qué bueno verte de nuevo"}
           </h1>
           <p>
-            {register
+            {isRegister
               ? "Regístrate de forma independiente. No necesitas una cuenta de demostración."
               : "Ingresa a tu cuenta y continúa cuidando de ti."}
           </p>
-          <form
-            className={register ? "registration-form" : undefined}
+          {isRegister && <fieldset><legend>¿Qué tipo de cuenta deseas crear?</legend><div className="auth-mode-switch">
+            <button type="button" aria-pressed={registrationRole === "PATIENT"} onClick={() => setRegistrationRole("PATIENT")}>Paciente</button>
+            <button type="button" aria-pressed={registrationRole === "DOCTOR"} onClick={() => setRegistrationRole("DOCTOR")}>Médico</button>
+          </div></fieldset>}
+          {(!isRegister || registrationRole === "PATIENT") && <><p>Continuar con Google — Solo pacientes</p><GoogleSignIn /></>}
+          {isRegister && registrationRole === "DOCTOR" ? <MedicalRegistration /> : <form
+            className={isRegister ? "registration-form" : undefined}
             onSubmit={handleSubmit(submit)}
             noValidate
           >
-            {register && (
+            {isRegister && (
               <>
                 <div className="auth-field-grid">
                   <label>
@@ -277,7 +306,7 @@ export function Auth({ register = false }: { register?: boolean }) {
             )}
             <label>
               Correo electrónico{" "}
-              {register && (
+              {isRegister && (
                 <span className="required-mark" aria-hidden="true">
                   *
                 </span>
@@ -295,7 +324,7 @@ export function Auth({ register = false }: { register?: boolean }) {
                 </small>
               )}
             </label>
-            {register && (
+            {isRegister && (
               <label>
                 Teléfono de contacto{" "}
                 <span className="required-mark" aria-hidden="true">
@@ -317,7 +346,7 @@ export function Auth({ register = false }: { register?: boolean }) {
             )}
             <label htmlFor="auth-password">
               Contraseña{" "}
-              {register && (
+              {isRegister && (
                 <span className="required-mark" aria-hidden="true">
                   *
                 </span>
@@ -328,12 +357,12 @@ export function Auth({ register = false }: { register?: boolean }) {
                 <input
                   id="auth-password"
                   type={showPassword ? "text" : "password"}
-                  autoComplete={register ? "new-password" : "current-password"}
+                  autoComplete={isRegister ? "new-password" : "current-password"}
                   {...field("password")}
                   aria-label="Contraseña"
                   aria-invalid={Boolean(errors.password)}
                   placeholder={
-                    register ? "Al menos 10 caracteres" : "Tu contraseña"
+                    isRegister ? "Al menos 10 caracteres" : "Tu contraseña"
                   }
                 />
                 <button
@@ -348,7 +377,7 @@ export function Auth({ register = false }: { register?: boolean }) {
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </span>
-              {register && (
+              {isRegister && (
                 <small className="field-hint">
                   Usa 10 caracteres o más, con mayúscula, minúscula y número.
                 </small>
@@ -359,7 +388,7 @@ export function Auth({ register = false }: { register?: boolean }) {
                 </small>
               )}
             </div>
-            {register && (
+            {isRegister && (
               <>
                 <label htmlFor="auth-password-confirmation">
                   Confirmar contraseña{" "}
@@ -443,23 +472,24 @@ export function Auth({ register = false }: { register?: boolean }) {
             <Button disabled={isSubmitting} className="full">
               {isSubmitting
                 ? "Un momento…"
-                : register
+                : isRegister
                   ? "Crear mi cuenta"
                   : "Iniciar sesión"}
             </Button>
-          </form>
-          <p className="auth-switch">
-            {register ? "¿Ya tienes cuenta?" : "¿Primera vez por aquí?"}{" "}
-            <Link to={register ? "/login" : "/register"}>
-              {register ? "Inicia sesión" : "Crea tu cuenta"}
-            </Link>
-          </p>
-          {!register && (
+          </form>}
+          {!isRegister && (
+            <p className="auth-recovery">
+              <Link to="/recover">¿Necesitas recuperar el acceso?</Link>
+            </p>
+          )}
+          {!isRegister && (
             <div className="notice">
-              <strong>Demostración local</strong>
+              <strong>Acceso para pacientes, médicos y administración</strong>
               <p>
-                También puedes crear una cuenta independiente desde “Crea tu
-                cuenta”. Todos los pagos son simulados.
+                Usa este mismo formulario. Los permisos dependen de tu cuenta;
+                las cuentas médicas y administrativas son creadas por personal
+                autorizado. Los pacientes pueden registrarse con cualquier
+                correo personal válido.
               </p>
             </div>
           )}

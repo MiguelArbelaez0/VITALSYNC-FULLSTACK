@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { DoctorClinicalHistory } from "../features/doctor/ClinicalHistory";
-import { DoctorPasswordSetup } from "../features/doctor/DoctorPassword";
+import { PatientPasswordForm } from "../features/auth/PatientPassword";
 import { AuthProvider } from "../hooks/useAuth";
 const user = {
   id: 3,
@@ -128,17 +128,17 @@ it.each([401, 403, 404])(
     expect(screen.queryByText("Familia ficticia")).not.toBeInTheDocument();
   },
 );
-it("exige cambio individual de contraseña y refresca la sesión", async () => {
+it("permite al paciente cambiar su contraseña y refresca la sesión", async () => {
   let changed = false;
   const fetch = vi.fn(async (url: string, options?: RequestInit) => {
-    if (url.endsWith("/doctor/password")) {
+    if (url.endsWith("/auth/password")) {
       changed = true;
       return response({ message: "ok" });
     }
     return response({ ...user, must_change_password: !changed });
   });
   vi.stubGlobal("fetch", fetch);
-  mount(<DoctorPasswordSetup />);
+  mount(<PatientPasswordForm />);
   const save = await screen.findByRole("button", {
     name: "Guardar contraseña",
   });
@@ -156,10 +156,10 @@ it("exige cambio individual de contraseña y refresca la sesión", async () => {
     "IndividualPrueba2026!",
   );
   await userEvent.click(save);
-  expect(await screen.findByText("Agenda habilitada")).toBeVisible();
+  expect(await screen.findByText("Contraseña actualizada correctamente.")).toBeVisible();
   expect(
     fetch.mock.calls.some(
-      ([u, o]) => u.endsWith("/doctor/password") && o?.method === "POST",
+      ([u, o]) => u.endsWith("/auth/password") && o?.method === "POST",
     ),
   ).toBe(true);
 });

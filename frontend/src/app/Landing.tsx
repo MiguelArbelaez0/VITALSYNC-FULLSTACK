@@ -16,10 +16,10 @@ export function Landing() {
         <nav>
           <a href="#como-funciona">Cómo funciona</a>
           <Button variant="outline" asChild>
-            <Link to="/login">Iniciar sesión</Link>
+            <Link to="/auth">Iniciar sesión</Link>
           </Button>
           <Button asChild>
-            <Link to="/register">Crear mi cuenta</Link>
+            <Link to="/auth?mode=register">Crear mi cuenta</Link>
           </Button>
         </nav>
       </header>
@@ -40,13 +40,13 @@ export function Landing() {
             </p>
             <div className="button-row">
               <Button asChild>
-                <Link to="/register">
+                <Link to="/auth?mode=register">
                   Comenzar a cuidarme
                   <ArrowRight size={18} />
                 </Link>
               </Button>
               <Button variant="outline" asChild>
-                <Link to="/login">Ya tengo una cuenta</Link>
+                <Link to="/auth">Ya tengo una cuenta</Link>
               </Button>
             </div>
             <span className="landing-note">
