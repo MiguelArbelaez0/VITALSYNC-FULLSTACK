@@ -1,91 +1,103 @@
-# VITALSYNC — Réplica académica y propuesta de mejoras
+# VITALSYNC
 
-**Proyecto universitario de análisis y desarrollo de sistemas · Ingeniería de Sistemas · Fundación Universitaria CEIPA · 2026**
+### Plataforma web de gestión de citas y videoconsultas
 
-**Versión académica:** [v1.1.0](https://github.com/MiguelArbelaez0/VITALSYNC-FULLSTACK/releases/tag/v1.1.0) · **Rama de desarrollo:** `develop` · **Estado:** prototipo funcional de demostración local
+**Réplica académica de una plataforma existente, con mejoras funcionales desarrolladas para un proyecto universitario.**
 
-> **Aviso importante:** Este repositorio NO es el producto oficial de VitalSync.** VitalSync es una empresa/plataforma preexistente que se tomó como referente en una actividad asignada por la universidad. Nuestro trabajo consistió en **analizar el caso, desarrollar una réplica funcional académica, proponer e implementar mejoras y preparar su sustentación al finalizar el semestre**. Es un ejercicio independiente, sin afiliación, representación ni respaldo de la empresa original.
+**React · TypeScript · FastAPI · PostgreSQL · Docker · LiveKit**
 
-## ¿En qué consistió el proyecto?
+[**Explorar las funcionalidades**](#funcionalidades) · [**Ver las capturas**](#recorrido-visual) · [**Ejecutar el proyecto**](#ejecución-local) · [**Consultar las pruebas**](#pruebas-y-validación) · [**Versión 1.1.0**](https://github.com/MiguelArbelaez0/VITALSYNC-FULLSTACK/releases/tag/v1.1.0)
 
-La actividad académica no consistía en fundar una nueva empresa de telemedicina ni en ofrecer atención médica real. El reto era estudiar una plataforma existente y llevar el análisis de sistemas a un prototipo verificable.
+![Interfaz de videoconsulta de VITALSYNC en un entorno de prueba](docs/screenshots/livekit-room-desktop.png)
 
-El trabajo realizado abarca:
+> **Contexto académico:** VITALSYNC se desarrolló en el marco de una actividad de **Ingeniería de Sistemas de la Fundación Universitaria CEIPA (2026)**. La universidad propuso analizar una plataforma llamada VitalSync, que ya existía, **reproducir sus procesos principales en una implementación independiente y aportar mejoras** para sustentarlas al cierre del semestre. Este repositorio es la **solución realizada para la actividad**, no el producto oficial ni una iniciativa vinculada a la empresa original.
 
-1. **Análisis:** identificación de actores, requisitos, casos de uso, reglas de negocio y estados de las citas.
-2. **Diseño:** definición de los procesos del paciente, médico y administrador, así como de sus permisos e interacciones.
-3. **Réplica funcional:** implementación independiente de una aplicación web integral que reproduce los flujos principales del caso de estudio.
-4. **Mejoras propuestas:** ampliación del prototipo con gestión por roles, aprobación de médicos, videollamadas reales mediante LiveKit y espacios de simulación independientes de las citas.
-5. **Verificación y sustentación:** pruebas, evidencia visual, documentación y recorridos demostrables para la evaluación de fin de semestre.
+## El reto y nuestra solución
 
-Las funcionalidades implementadas son parte de **nuestra propuesta académica**; no constituyen una descripción certificada del software de la empresa tomada como referencia.
+La actividad consistió en llevar el **análisis y diseño de sistemas** a una aplicación ejecutable que demostrara cómo interactúan pacientes, profesionales de salud y personal administrativo.
 
-## Funcionalidades del prototipo
+Construimos una aplicación integral con una **interfaz compartida de autenticación**, tres portales conectados a una misma base de datos, reglas de reserva y pagos simulados. Como mejoras, añadimos aprobación de cuentas médicas, videoconsultas mediante WebRTC y una sala privada para probar la comunicación **sin crear citas ni realizar pagos**.
 
-| Módulo | Funcionalidades implementadas |
+Este proyecto demuestra especialmente el trabajo con **reglas de negocio, autorización por usuario y recurso, transacciones, interfaces conectadas a una API, pruebas automatizadas y despliegues reproducibles**.
+
+## Funcionalidades
+
+| Módulo | Qué permite hacer |
 | --- | --- |
-| **Paciente** | Registro con correo personal, inicio de sesión, Google (si está configurado), perfil, planes, reservas, pagos simulados, citas e historial |
-| **Médico** | Solicitud de registro, correo institucional de demostración generado automáticamente, aprobación administrativa, cuenta individual, agenda, pacientes asignados e historias clínicas ficticias autorizadas |
-| **Administrador** | Gestión de pacientes, médicos, solicitudes profesionales, disponibilidad, planes, citas, pagos/devoluciones simuladas y auditoría |
-| **Videoconsulta** | Sala privada con LiveKit/WebRTC, cámara y micrófono opcionales, cambio de dispositivos, pantalla compartida, reconexión y finalización persistente por el médico |
-| **Sala de simulación** | Prueba individual o con invitación privada, sin crear una cita, contratar un plan ni efectuar pagos |
-| **Seguridad y datos** | Roles y permisos comprobados en FastAPI, sesiones, transacciones, migraciones Alembic y persistencia PostgreSQL |
+| **Pacientes** | Registrarse, iniciar sesión con correo o Google, consultar médicos, elegir planes, reservar citas presenciales o virtuales y revisar su historial |
+| **Médicos** | Solicitar registro profesional, recibir una cuenta institucional tras aprobación, gestionar la agenda y consultar únicamente las historias clínicas ficticias autorizadas |
+| **Administración** | Aprobar médicos, gestionar usuarios, horarios, planes, citas, pagos y devoluciones simuladas, y consultar registros de auditoría |
+| **Videoconsultas** | Conectar paciente y médico mediante LiveKit, con cámara y micrófono opcionales, selección de dispositivos, pantalla compartida, reconexión y finalización controlada |
+| **Simulación** | Probar una sala individual o compartida por invitación, sin cita, plan ni copago |
 
-### Acceso único para los tres roles
+**Acceso según el rol:** una sola pantalla de inicio de sesión dirige al paciente a `/portal`, al médico a `/doctor` y al administrador a `/admin`. Google está disponible **solo para pacientes**. Las solicitudes de registro médico requieren aprobación antes de conceder acceso profesional.
 
-La aplicación tiene una pantalla compartida de autenticación. Después de verificar la cuenta, el servidor determina su rol y la aplicación dirige al usuario a su portal:
+## Recorrido visual
 
-- Paciente → `/portal`.
-- Médico → `/doctor`.
-- Administrador → `/admin`.
+Las imágenes corresponden a **capturas reales de la aplicación durante las pruebas**, con información de demostración.
 
-El registro público permite crear pacientes y **solicitar** un perfil médico. Una solicitud médica no concede permisos clínicos: necesita aprobación administrativa. El correo médico de demostración sigue la convención `nombre.apellido@doctor.vitalsync.demo`; es un identificador local, **no una dirección de correo real**. Solo los pacientes pueden utilizar el acceso con Google; los médicos y administradores utilizan sus credenciales asignadas.
+| Portal del paciente | Portal del médico | Portal administrativo |
+| :---: | :---: | :---: |
+| [![Panel del paciente](docs/screenshots/dashboard-desktop.png)](docs/screenshots/dashboard-desktop.png) | [![Panel médico](docs/screenshots/doctor-dashboard-desktop.png)](docs/screenshots/doctor-dashboard-desktop.png) | [![Panel administrativo](docs/screenshots/admin-dashboard-desktop.png)](docs/screenshots/admin-dashboard-desktop.png) |
+| Planes, citas e historial | Agenda y atención virtual | Gestión y supervisión |
 
-### Videollamadas y simulación
+**Más capturas:** [inicio de sesión](docs/screenshots/auth-unified-desktop.png) · [registro médico](docs/screenshots/medical-registration-desktop.png) · [videoconsulta finalizada](docs/screenshots/livekit-finished-desktop.png) · [sala de simulación](docs/screenshots/simulation-desktop.png) · [pantalla compartida](docs/screenshots/simulation-shared-screen.png).
 
-En `v1.1.0`, las videoconsultas pueden conectar audio y video reales por WebRTC cuando LiveKit está configurado. **Entrar sin cámara o con el micrófono apagado es válido**. Salir de una llamada no equivale a finalizar la consulta: la finalización formal corresponde al médico autorizado y se refleja en los historiales.
+## Decisiones técnicas destacadas
 
-La **Sala de simulación** permite practicar con dispositivos y pantalla compartida, a solas o con un segundo usuario autorizado, sin alterar el calendario ni los pagos. Las salas de prueba no representan actos médicos ni crean historias clínicas.
-
-![Sala de simulación académica de VITALSYNC](docs/screenshots/simulation-desktop.png)
+- **Autorización real en el servidor:** las acciones se verifican por rol y relación con el recurso; un administrador no puede consultar historias clínicas y un médico no puede acceder a pacientes ajenos.
+- **Reservas resistentes a conflictos:** validación de disponibilidad, bloqueos transaccionales, restricciones PostgreSQL contra solapamientos e idempotencia para evitar operaciones duplicadas.
+- **Identidad unificada:** contraseñas protegidas mediante Argon2id, sesiones con cookies `HttpOnly` e inicio de sesión con Google limitado a pacientes. El correo `@doctor.vitalsync.demo` identifica cuentas ficticias; **no otorga privilegios por sí solo**.
+- **Videollamadas integradas:** FastAPI autoriza la sala y LiveKit transporta audio y video. Salir de una llamada **no** finaliza la cita; la finalización médica actualiza el estado persistente y los historiales.
+- **Pruebas reproducibles:** bases PostgreSQL aisladas para pruebas, migraciones Alembic, comprobaciones automatizadas y ejecución de integración continua en GitHub.
 
 ## Tecnologías y arquitectura
 
-| Capa | Tecnologías |
+| Parte | Tecnologías |
 | --- | --- |
 | Interfaz | React 19, TypeScript, Vite, React Router, Tailwind CSS, TanStack Query |
-| API y negocio | Python 3.13, FastAPI, Pydantic, SQLAlchemy |
-| Datos | PostgreSQL 17, Alembic, restricciones e integridad transaccional |
-| Identidad | Sesiones con sesiones protegidas con el atributo HttpOnly, Argon2id, Google Identity Services solo para pacientes |
-| Videollamadas | LiveKit autohospedado y WebRTC |
-| Infraestructura | Docker Compose, nginx y archivos de automatización en PowerShell |
-| Calidad | pytest, Vitest, Playwright y GitHub Actions |
+| Servidor y reglas | Python 3.13, FastAPI, Pydantic, SQLAlchemy |
+| Persistencia | PostgreSQL 17, Alembic |
+| Autenticación | Sesiones protegidas, Argon2id, Google Identity Services |
+| Videocomunicación | LiveKit, WebRTC |
+| Infraestructura y pruebas | Docker Compose, pytest, Vitest, Playwright, GitHub Actions |
 
-```text
-Paciente / Médico / Administrador (React)
-                   |
-             Interfaz REST /api
-                   |
-           FastAPI + permisos
-             /           \
-     PostgreSQL        LiveKit
-   datos e historial   audio y video
+```mermaid
+flowchart TB
+    U["Paciente · Médico · Administrador"] --> W["Interfaz React"]
+    W --> A["API FastAPI: permisos y reglas de negocio"]
+    A --> P[("PostgreSQL: datos e historial")]
+    A --> L["LiveKit: autorización de salas"]
+    W <-->|"Audio y video mediante WebRTC"| L
 ```
 
-El servidor verifica las autorizaciones y las reglas de negocio; React no decide quién puede consultar historias clínicas, emitir credenciales temporales de acceso a las salas o ejecutar acciones administrativas. Los datos clínicos de demostración son sintéticos.
+La base de datos mantiene el historial administrativo y los estados de las citas. **No almacena grabaciones de audio o video ni transcripciones.** La configuración local de LiveKit no constituye, por sí sola, un despliegue para comunicaciones entre redes distintas.
 
-## Ejecutar VITALSYNC localmente
+## Pruebas y validación
 
-### Requisitos
+<details>
+<summary><strong>Resultados documentados de la versión 1.1.0</strong></summary>
 
-- Windows 11 con PowerShell (entorno de desarrollo documentado).
-- Docker Desktop en modo contenedores Linux y Docker Compose v2.
-- Git.
-- Internet para descargar las dependencias y, opcionalmente, utilizar el inicio de sesión con Google.
+| Comprobación | Resultado documentado |
+| --- | --- |
+| Pruebas del servidor con PostgreSQL aislado | **200 aprobadas** |
+| Pruebas de la interfaz | **66 aprobadas** |
+| Compilación React y TypeScript | **Correcta** |
+| Pruebas de extremo a extremo | Registro, aprobación médica, reservas, videoconsultas, reconexión, finalización y simulación |
+| Simulación audiovisual | Dos sesiones con medios sintéticos; prueba de pantalla compartida |
+| Persistencia | Base PostgreSQL y migraciones conservadas |
 
-Node.js y Python locales son opcionales si se ejecuta la aplicación únicamente en Docker.
+**Alcance de las pruebas:** no equivalen a una comprobación de calidad audible real, a una prueba de videollamada entre redes distintas ni a una autenticación de Google con consentimiento real. Estas verificaciones deben realizarse por separado antes de cualquier despliegue externo.
 
-### Preparar el entorno
+</details>
+
+Consultar las [evidencias de validación](docs/VALIDACION.md) y las [ejecuciones de GitHub Actions](https://github.com/MiguelArbelaez0/VITALSYNC-FULLSTACK/actions).
+
+## Ejecución local
+
+**Requisitos:** Git, Docker Desktop con contenedores Linux y Docker Compose. El entorno documentado utiliza Windows y PowerShell.
+
+### 1. Descargar y preparar
 
 ```powershell
 git clone https://github.com/MiguelArbelaez0/VITALSYNC-FULLSTACK.git
@@ -93,7 +105,15 @@ cd VITALSYNC-FULLSTACK
 Copy-Item .env.example .env
 ```
 
-Configura las variables locales antes de arrancar. Para las funcionalidades de video y la entrega privada de credenciales médicas, utiliza los archivos de automatización del proyecto:
+El despliegue utiliza el volumen protegido `vitalsync_vitalsync_data`. **Únicamente para una instalación nueva, sin datos anteriores**, crea ese volumen vacío antes de iniciar los servicios:
+
+```powershell
+docker volume create vitalsync_vitalsync_data
+```
+
+Si ya utilizabas VITALSYNC, **no reemplaces el volumen existente**: conserva sus datos y sigue la [guía de respaldo y recuperación](docs/DOCKER_UNIFICADO.md).
+
+### 2. Preparar las credenciales locales y arrancar
 
 ```powershell
 .\infrastructure\Configure-LiveKit.ps1
@@ -102,29 +122,22 @@ docker compose -p vitalsync --profile video up -d --build --wait
 docker compose -p vitalsync --profile video ps
 ```
 
-**Precaución sobre PostgreSQL:** este proyecto utiliza un volumen persistente protegido (`vitalsync_vitalsync_data`). En una instalación nueva puede requerirse inicializarlo o restaurarlo mediante el procedimiento de [Docker unificado](docs/DOCKER_UNIFICADO.md) antes del arranque. **No elimines volúmenes ni ejecutes `docker compose down -v` para resolver errores de inicio.** El código clonado no incluye la base de datos privada de otro equipo.
+La configuración local se guarda en `.env`, excluido del repositorio. **No publiques contraseñas, claves de LiveKit ni archivos de cuentas médicas.**
 
-### Direcciones locales
-
-| Servicio | Dirección |
+| Dirección | Uso |
 | --- | --- |
-| Inicio de sesión compartido | http://localhost:5188/login |
-| Registro compartido | http://localhost:5188/auth |
-| Portal paciente | http://localhost:5188/portal |
-| Portal médico | http://localhost:5188/doctor |
-| Portal administrador | http://localhost:5188/admin |
-| API / Swagger | http://localhost:8088/docs |
-| Estado de la API | http://localhost:8088/api/health |
+| http://localhost:5188/login | Inicio de sesión compartido |
+| http://localhost:5188/auth | Registro |
+| http://localhost:5188/portal | Pacientes |
+| http://localhost:5188/doctor | Médicos |
+| http://localhost:5188/admin | Administración |
+| http://localhost:8088/docs | Documentación interactiva de la API |
 
-**Credenciales:** el README no distribuye contraseñas. Los perfiles de demostración utilizan credenciales individuales que se preparan o entregan mediante procedimientos locales privados. Un visitante puede crear un paciente ficticio desde el registro. Para las cuentas médicas es necesaria la aprobación administrativa.
+Para probar como paciente, crea **una cuenta ficticia** en el formulario. La activación de cuentas médicas requiere aprobación administrativa y entrega privada de credenciales; las contraseñas no se incluyen en este repositorio. Si deseas utilizar Google, consulta la [configuración del identificador de cliente](docs/google-auth-v1.1.md).
 
-**Google:** para utilizar el botón oficial configura `GOOGLE_CLIENT_ID` y `VITE_GOOGLE_CLIENT_ID` con el identificador público de cliente de tu propio proyecto de Google Cloud. Consulta [Google Identity Services](docs/google-auth-v1.1.md).
+**Importante:** LiveKit está configurado para pruebas locales. El acceso desde otras redes requiere HTTPS, WSS y configuración ICE/TURN. El arranque de Docker no configura automáticamente esa infraestructura.
 
-**Redes externas:** el despliegue local de LiveKit está preparado para `localhost`. La conexión entre redes requiere infraestructura y configuración adicionales, incluidos HTTPS/WSS e ICE/TURN; no debe asumirse disponible por ejecutar Compose.
-
-## Pruebas y evidencia
-
-La verificación local documentada de `v1.1.0` informa **200 pruebas del servidor** y **66 pruebas de la interfaz** aprobadas, junto con pruebas de extremo a extremo de registro, aprobación médica, reservas, LiveKit, reconexión, finalización y sala de simulación. Las pruebas audiovisuales de extremo a extremo de esta revisión utilizan medios sintéticos. El acceso real de Google, la calidad audible y las llamadas entre redes diferentes **requieren verificaciones manuales adicionales**.
+### 3. Ejecutar las pruebas
 
 ```powershell
 .\infrastructure\Test-Backend.ps1
@@ -134,49 +147,29 @@ npm --prefix frontend run build
 .\infrastructure\test-livekit.ps1
 ```
 
-Las pruebas que modifican datos utilizan bases aisladas de PostgreSQL. Consulta los resultados y límites concretos en [docs/VALIDACION.md](docs/VALIDACION.md). Los trabajos de integración continua se pueden consultar en [GitHub Actions](https://github.com/MiguelArbelaez0/VITALSYNC-FULLSTACK/actions).
+Las pruebas de integración utilizan bases separadas de la base principal. No ejecutes `docker compose down -v` sobre una instalación con datos que deban conservarse.
 
-## Documentación para la sustentación
+## Material para la sustentación
 
-- [Arquitectura y reglas de negocio](docs/ARQUITECTURA.md)
+- [Análisis técnico, arquitectura y reglas de negocio](docs/ARQUITECTURA.md)
 - [Guía de demostración del paciente](docs/GUIA_DEMOSTRACION_PACIENTE.md)
-- [Registro unificado y aprobación médica](docs/auth-registration-v1.1.md)
-- [Google para pacientes](docs/google-auth-v1.1.md)
-- [Portal médico](docs/doctor-portal.md)
-- [Portal administrativo](docs/admin-portal.md)
-- [Videollamadas LiveKit y salas de simulación](docs/video-consultations-v1.1.md)
-- [Docker, respaldo y recuperación](docs/DOCKER_UNIFICADO.md)
-- [Validaciones y evidencia de pruebas](docs/VALIDACION.md)
+- [Registro de pacientes y aprobación de médicos](docs/auth-registration-v1.1.md)
+- [Portal médico](docs/doctor-portal.md) y [portal administrativo](docs/admin-portal.md)
+- [Videollamadas y salas de simulación](docs/video-consultations-v1.1.md)
+- [Instalación, respaldo y conservación de datos](docs/DOCKER_UNIFICADO.md)
+- [Informe de validación](docs/VALIDACION.md)
 
-### Capturas de la implementación académica
+## Evolución del proyecto
 
-| Interfaz | Evidencia |
+| Entrega | Avances |
 | --- | --- |
-| Paciente | [Panel principal](docs/screenshots/dashboard-desktop.png) |
-| Médico | [Portal médico](docs/screenshots/doctor-dashboard-desktop.png) |
-| Administrador | [Panel principal administrativo](docs/screenshots/admin-dashboard-desktop.png) |
-| Videollamada | [Sala LiveKit](docs/screenshots/livekit-room-desktop.png) |
-| Simulación | [Sala de prueba](docs/screenshots/simulation-desktop.png) |
-| Pantalla compartida | [Demostración](docs/screenshots/simulation-shared-screen.png) |
+| [v1.0.0](https://github.com/MiguelArbelaez0/VITALSYNC-FULLSTACK/releases/tag/v1.0.0) | Portales de paciente, médico y administrador; citas, pagos simulados e historial |
+| [v1.1.0](https://github.com/MiguelArbelaez0/VITALSYNC-FULLSTACK/releases/tag/v1.1.0) | Registro e inicio de sesión unificados, acceso de pacientes con Google, LiveKit y salas de simulación sin cita |
 
-## Evolución del trabajo
+## Alcance académico y uso responsable
 
-| Versión | Entrega |
-| --- | --- |
-| [v1.0.0](https://github.com/MiguelArbelaez0/VITALSYNC-FULLSTACK/releases/tag/v1.0.0) | Réplica académica inicial con los tres portales, gestión de citas, pagos simulados y teleconsulta por estados |
-| [v1.1.0](https://github.com/MiguelArbelaez0/VITALSYNC-FULLSTACK/releases/tag/v1.1.0) | Inicio y registro unificados, Google para pacientes, solicitudes médicas, LiveKit y salas de simulación |
+**VITALSYNC es una réplica académica independiente, no el sistema original de la empresa tomada como referencia.** El nombre del caso de estudio se conserva para identificar la actividad; no implica afiliación, patrocinio ni autorización de la empresa.
 
-La documentación y el repositorio muestran **el desarrollo realizado por el equipo universitario**, no un lanzamiento, actualización o producto de la empresa de referencia.
+Este prototipo se desarrolló para **aprender, implementar mejoras y sustentar resultados universitarios**, no para prestar atención sanitaria real. Los pacientes y las historias clínicas utilizados en demostraciones son ficticios; los pagos y devoluciones no transfieren dinero. Aunque la videollamada transmite medios en tiempo real, la aplicación no los graba. Las pruebas realizadas no equivalen a certificación clínica, legal ni de seguridad para producción.
 
-## Alcance y aviso de uso
-
-Este proyecto se desarrolló **exclusivamente para aprendizaje, evaluación y sustentación universitaria**. La marca y el nombre de la plataforma de referencia pertenecen a sus respectivos titulares; este repositorio no implica afiliación ni autorización de la empresa original.
-
-- **No es un servicio de telemedicina operativo**, ni está diseñado para atender pacientes reales.
-- Los pacientes y las historias clínicas de la demostración deben ser **ficticios**.
-- Los pagos, copagos y devoluciones son **simulados**; no se transfieren fondos.
-- El uso local de LiveKit puede transmitir audio y video en tiempo real, pero **la aplicación no los graba ni genera transcripciones**.
-- Las pruebas automatizadas y el funcionamiento local **no equivalen a una certificación de seguridad, cumplimiento legal o aptitud clínica**.
-- No se deben introducir documentos, historiales médicos ni credenciales reales en una instalación académica compartida.
-
-**Propósito de la entrega:** demostrar cómo un caso de estudio universitario puede traducirse en análisis, diseño, implementación, validación y mejoras funcionales verificables al cierre del semestre.
+**Resultado académico:** una implementación verificable que conecta análisis de requisitos, diseño de procesos, desarrollo integral, control de acceso, persistencia, pruebas automatizadas y presentación funcional al cierre del semestre.
