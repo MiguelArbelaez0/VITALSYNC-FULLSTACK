@@ -1,5 +1,9 @@
 # VITALSYNC
 
+> **Estado:** Completado  
+> **Versión:** `v1.1.0 (release)`  
+> **Tecnologías:** React · TypeScript · FastAPI · PostgreSQL · Docker · LiveKit
+
 ### Plataforma web de gestión de citas y videoconsultas
 
 **Réplica académica de una plataforma existente, con mejoras funcionales desarrolladas para un proyecto universitario.**
