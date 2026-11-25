@@ -4,8 +4,7 @@
 
 **Versión académica:** [v1.1.0](https://github.com/MiguelArbelaez0/VITALSYNC-FULLSTACK/releases/tag/v1.1.0) · **Rama de desarrollo:** `develop` · **Estado:** prototipo funcional de demostración local
 
-> [!IMPORTANT]
-> **Este repositorio NO es el producto oficial de VitalSync.** VitalSync es una empresa/plataforma preexistente que se tomó como referente en una actividad asignada por la universidad. Nuestro trabajo consistió en **analizar el caso, desarrollar una réplica funcional académica, proponer e implementar mejoras y preparar su sustentación al finalizar el semestre**. Es un ejercicio independiente, sin afiliación, representación ni respaldo de la empresa original.
+> **Aviso importante:** Este repositorio NO es el producto oficial de VitalSync.** VitalSync es una empresa/plataforma preexistente que se tomó como referente en una actividad asignada por la universidad. Nuestro trabajo consistió en **analizar el caso, desarrollar una réplica funcional académica, proponer e implementar mejoras y preparar su sustentación al finalizar el semestre**. Es un ejercicio independiente, sin afiliación, representación ni respaldo de la empresa original.
 
 ## ¿En qué consistió el proyecto?
 
@@ -15,7 +14,7 @@ El trabajo realizado abarca:
 
 1. **Análisis:** identificación de actores, requisitos, casos de uso, reglas de negocio y estados de las citas.
 2. **Diseño:** definición de los procesos del paciente, médico y administrador, así como de sus permisos e interacciones.
-3. **Réplica funcional:** implementación independiente de una aplicación fullstack que reproduce los flujos principales del caso de estudio.
+3. **Réplica funcional:** implementación independiente de una aplicación web integral que reproduce los flujos principales del caso de estudio.
 4. **Mejoras propuestas:** ampliación del prototipo con gestión por roles, aprobación de médicos, videollamadas reales mediante LiveKit y espacios de simulación independientes de las citas.
 5. **Verificación y sustentación:** pruebas, evidencia visual, documentación y recorridos demostrables para la evaluación de fin de semestre.
 
@@ -34,7 +33,7 @@ Las funcionalidades implementadas son parte de **nuestra propuesta académica**;
 
 ### Acceso único para los tres roles
 
-La aplicación tiene una pantalla compartida de autenticación. Después de verificar la cuenta, el backend determina su rol y la aplicación dirige al usuario a su portal:
+La aplicación tiene una pantalla compartida de autenticación. Después de verificar la cuenta, el servidor determina su rol y la aplicación dirige al usuario a su portal:
 
 - Paciente → `/portal`.
 - Médico → `/doctor`.
@@ -57,15 +56,15 @@ La **Sala de simulación** permite practicar con dispositivos y pantalla compart
 | Interfaz | React 19, TypeScript, Vite, React Router, Tailwind CSS, TanStack Query |
 | API y negocio | Python 3.13, FastAPI, Pydantic, SQLAlchemy |
 | Datos | PostgreSQL 17, Alembic, restricciones e integridad transaccional |
-| Identidad | Sesiones con cookies HttpOnly, Argon2id, Google Identity Services solo para pacientes |
+| Identidad | Sesiones con sesiones protegidas con el atributo HttpOnly, Argon2id, Google Identity Services solo para pacientes |
 | Videollamadas | LiveKit autohospedado y WebRTC |
-| Infraestructura | Docker Compose, nginx y scripts PowerShell |
+| Infraestructura | Docker Compose, nginx y archivos de automatización en PowerShell |
 | Calidad | pytest, Vitest, Playwright y GitHub Actions |
 
 ```text
 Paciente / Médico / Administrador (React)
                    |
-             API REST /api
+             Interfaz REST /api
                    |
            FastAPI + permisos
              /           \
@@ -73,7 +72,7 @@ Paciente / Médico / Administrador (React)
    datos e historial   audio y video
 ```
 
-El backend verifica las autorizaciones y las reglas de negocio; React no decide quién puede consultar historias clínicas, emitir tokens de sala o ejecutar acciones administrativas. Los datos clínicos de demostración son sintéticos.
+El servidor verifica las autorizaciones y las reglas de negocio; React no decide quién puede consultar historias clínicas, emitir credenciales temporales de acceso a las salas o ejecutar acciones administrativas. Los datos clínicos de demostración son sintéticos.
 
 ## Ejecutar VITALSYNC localmente
 
@@ -94,7 +93,7 @@ cd VITALSYNC-FULLSTACK
 Copy-Item .env.example .env
 ```
 
-Configura las variables locales antes de arrancar. Para las funcionalidades de video y la entrega privada de credenciales médicas, utiliza los scripts del proyecto:
+Configura las variables locales antes de arrancar. Para las funcionalidades de video y la entrega privada de credenciales médicas, utiliza los archivos de automatización del proyecto:
 
 ```powershell
 .\infrastructure\Configure-LiveKit.ps1
@@ -107,9 +106,9 @@ docker compose -p vitalsync --profile video ps
 
 ### Direcciones locales
 
-| Servicio | URL |
+| Servicio | Dirección |
 | --- | --- |
-| Inicio y login compartido | http://localhost:5188/login |
+| Inicio de sesión compartido | http://localhost:5188/login |
 | Registro compartido | http://localhost:5188/auth |
 | Portal paciente | http://localhost:5188/portal |
 | Portal médico | http://localhost:5188/doctor |
@@ -117,15 +116,15 @@ docker compose -p vitalsync --profile video ps
 | API / Swagger | http://localhost:8088/docs |
 | Estado de la API | http://localhost:8088/api/health |
 
-**Credenciales:** el README no distribuye contraseñas. Los perfiles demo utilizan credenciales individuales que se preparan o entregan mediante procedimientos locales privados. Un visitante puede crear un paciente ficticio desde el registro. Para las cuentas médicas es necesaria la aprobación administrativa.
+**Credenciales:** el README no distribuye contraseñas. Los perfiles de demostración utilizan credenciales individuales que se preparan o entregan mediante procedimientos locales privados. Un visitante puede crear un paciente ficticio desde el registro. Para las cuentas médicas es necesaria la aprobación administrativa.
 
-**Google:** para utilizar el botón oficial configura `GOOGLE_CLIENT_ID` y `VITE_GOOGLE_CLIENT_ID` con el Client ID de tu propio proyecto de Google Cloud. Consulta [Google Identity Services](docs/google-auth-v1.1.md).
+**Google:** para utilizar el botón oficial configura `GOOGLE_CLIENT_ID` y `VITE_GOOGLE_CLIENT_ID` con el identificador público de cliente de tu propio proyecto de Google Cloud. Consulta [Google Identity Services](docs/google-auth-v1.1.md).
 
 **Redes externas:** el despliegue local de LiveKit está preparado para `localhost`. La conexión entre redes requiere infraestructura y configuración adicionales, incluidos HTTPS/WSS e ICE/TURN; no debe asumirse disponible por ejecutar Compose.
 
 ## Pruebas y evidencia
 
-La validación local documentada de `v1.1.0` informa **200 pruebas backend** y **66 frontend** aprobadas, junto con recorridos E2E de registro, aprobación médica, reservas, LiveKit, reconexión, finalización y sala de simulación. Los E2E audiovisuales de esta revisión utilizan medios sintéticos. El acceso real de Google, la calidad audible y las llamadas entre redes diferentes **requieren verificaciones manuales adicionales**.
+La verificación local documentada de `v1.1.0` informa **200 pruebas del servidor** y **66 pruebas de la interfaz** aprobadas, junto con pruebas de extremo a extremo de registro, aprobación médica, reservas, LiveKit, reconexión, finalización y sala de simulación. Las pruebas audiovisuales de extremo a extremo de esta revisión utilizan medios sintéticos. El acceso real de Google, la calidad audible y las llamadas entre redes diferentes **requieren verificaciones manuales adicionales**.
 
 ```powershell
 .\infrastructure\Test-Backend.ps1
@@ -153,9 +152,9 @@ Las pruebas que modifican datos utilizan bases aisladas de PostgreSQL. Consulta 
 
 | Interfaz | Evidencia |
 | --- | --- |
-| Paciente | [Dashboard](docs/screenshots/dashboard-desktop.png) |
+| Paciente | [Panel principal](docs/screenshots/dashboard-desktop.png) |
 | Médico | [Portal médico](docs/screenshots/doctor-dashboard-desktop.png) |
-| Administrador | [Dashboard administrativo](docs/screenshots/admin-dashboard-desktop.png) |
+| Administrador | [Panel principal administrativo](docs/screenshots/admin-dashboard-desktop.png) |
 | Videollamada | [Sala LiveKit](docs/screenshots/livekit-room-desktop.png) |
 | Simulación | [Sala de prueba](docs/screenshots/simulation-desktop.png) |
 | Pantalla compartida | [Demostración](docs/screenshots/simulation-shared-screen.png) |
