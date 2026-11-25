@@ -18,7 +18,7 @@ import {
   Camera, CameraOff, Check, Clock3, Headphones, Mic, MicOff,
   Phone, PhoneOff, Settings2, Video,
 } from "lucide-react";
-import { api, post, dateText, timeText } from "../../services/api";
+import { ApiError, api, post, dateText, timeText } from "../../services/api";
 import type { Appointment } from "../../types";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
@@ -33,6 +33,7 @@ type FinalizeResponse = { status: string; appointment_status: string; finalized_
 const portalPath = (role: "PATIENT" | "DOCTOR") => role === "PATIENT" ? "/portal/appointments" : "/doctor/appointments";
 
 function displayError(error: unknown) {
+  if (error instanceof ApiError) return error.message;
   if (!(error instanceof Error)) return "Ocurrió un problema con la videollamada. Intenta de nuevo.";
   const message = error.message.toLowerCase();
   if (message.includes("permission") || message.includes("notallowed") || message.includes("permiso")) return "El navegador no permitió usar cámara o micrófono. Revisa los permisos del sitio.";
@@ -223,7 +224,7 @@ export function LiveKitConsultation({ appointmentId, role }: { appointmentId: st
                 </div>
               )}
             </section>
-            <ErrorBox error={error ? displayError(error) : null} />
+            {credentials && !finalizeOpen && <ErrorBox error={error ? displayError(error) : null} />}
             {credentials && <p className="livekit-security-note"><span /> Conexión segura · La desconexión no finaliza la cita</p>}
           </div>
 

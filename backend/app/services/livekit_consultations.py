@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import (
     DEMO_MODE, LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_API_URL, LIVEKIT_ENABLED,
-    LIVEKIT_PUBLIC_URL, LIVEKIT_TOKEN_TTL_SECONDS, LIVEKIT_MANAGED_ROOMS, TELECONSULT_ROOM_OPEN_MINUTES,
+    LIVEKIT_PUBLIC_URL, LIVEKIT_TOKEN_TTL_SECONDS, LIVEKIT_MANAGED_ROOMS,
     TELECONSULT_WAIT_GRACE_MINUTES,
 )
 from app.models.entities import (
@@ -77,8 +77,6 @@ def _room_membership(db: Session, appointment_id: int, user, doctor_id: int | No
         raise HTTPException(409, 'El estado actual de la cita no permite ingresar a video')
     current = now()
     immediate_demo = bool(vc.is_demo_test and appointment.is_demo_test and DEMO_MODE)
-    if not terminal and not immediate_demo and current < appointment.starts_at - timedelta(minutes=TELECONSULT_ROOM_OPEN_MINUTES):
-        raise HTTPException(409, 'La sala se habilita cinco minutos antes de la cita')
     if not terminal and not immediate_demo and current > appointment.ends_at + timedelta(minutes=TELECONSULT_WAIT_GRACE_MINUTES):
         raise HTTPException(409, 'La ventana de ingreso a la cita ya terminó')
     return appointment, vc, role
