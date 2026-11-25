@@ -93,6 +93,17 @@ describe("LiveKit consultation experience", () => {
     expect(published.video).toEqual({ deviceId: "chosen-camera" });
   });
 
+  it("shows the appointment window rejection once without connecting to LiveKit", async () => {
+    const detail = "La ventana de ingreso a la cita ya terminó";
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) =>
+      String(input).endsWith("/livekit-token") ? json({ detail }, 409) : json(appointment)));
+    mount("DOCTOR");
+    fireEvent.click(await screen.findByRole("button", { name: "Iniciar videollamada" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(detail);
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.queryByTestId("livekit-room")).not.toBeInTheDocument();
+  });
+
   it("requires a doctor confirmation to finalize the persistent consultation", async () => {
     let finished = false;
     const fetch = vi.fn(async (input: RequestInfo | URL) => {

@@ -58,7 +58,6 @@ def doctor_client():
 
 def test_patient_token_is_short_lived_and_confined_to_owned_appointment(patient, monkeypatch):
     configure_livekit(monkeypatch)
-    monkeypatch.setattr(livekit, 'TELECONSULT_ROOM_OPEN_MINUTES', 10080)
     appointment_id = reserve_virtual(patient, doctor_id=2)
 
     response = patient.post(f'/api/appointments/{appointment_id}/livekit-token', json={})
@@ -82,13 +81,22 @@ def test_patient_token_is_short_lived_and_confined_to_owned_appointment(patient,
     assert denied.status_code == 404
 
 
-def test_livekit_token_respects_appointment_entry_window(patient, monkeypatch):
+def test_livekit_allows_early_entry_but_rejects_expired_appointment(patient, monkeypatch):
     configure_livekit(monkeypatch)
     appointment_id = reserve_virtual(patient, doctor_id=2)
-    monkeypatch.setattr(livekit, 'TELECONSULT_ROOM_OPEN_MINUTES', 5)
+    with SessionLocal() as db:
+        assert db.get(Appointment, appointment_id).starts_at > now() + timedelta(minutes=5)
+    doctor, _, _ = doctor_client()
+    with doctor:
+        assert doctor.post(f'/api/doctor/appointments/{appointment_id}/livekit-token', json={}).status_code == 200
+    assert patient.post(f'/api/appointments/{appointment_id}/livekit-token', json={}).status_code == 200
+    with SessionLocal.begin() as db:
+        appointment = db.get(Appointment, appointment_id)
+        appointment.starts_at = now() - timedelta(hours=2)
+        appointment.ends_at = now() - timedelta(hours=1)
     response = patient.post(f'/api/appointments/{appointment_id}/livekit-token', json={})
     assert response.status_code == 409
-    assert 'cinco minutos' in response.json()['detail']
+    assert 'ya terminó' in response.json()['detail']
 
 
 def test_livekit_webhooks_track_participants_and_doctor_finalization_is_idempotent(patient, monkeypatch):
