@@ -1,280 +1,183 @@
-# VITALSYNC
+# VITALSYNC — Réplica académica y propuesta de mejoras
 
-**Portales de pacientes, médicos y administración en una aplicación local con React, FastAPI y PostgreSQL.** Los perfiles, horarios, planes y pagos son de demostración; las operaciones y la persistencia son reales.
+**Proyecto universitario de análisis y desarrollo de sistemas · Ingeniería de Sistemas · Fundación Universitaria CEIPA · 2026**
 
-## Inicio rápido en Windows 11
+**Versión académica:** [v1.1.0](https://github.com/MiguelArbelaez0/VITALSYNC-FULLSTACK/releases/tag/v1.1.0) · **Rama de desarrollo:** `develop` · **Estado:** prototipo funcional de demostración local
 
-Requisitos: Docker Desktop iniciado con contenedores Linux y Docker Compose v2, Git y PowerShell. La primera construcción necesita Internet para descargar dependencias; la aplicación no necesita servicios en la nube. Node 24 LTS y Python son opcionales para desarrollo y pruebas fuera de Docker.
+> [!IMPORTANT]
+> **Este repositorio NO es el producto oficial de VitalSync.** VitalSync es una empresa/plataforma preexistente que se tomó como referente en una actividad asignada por la universidad. Nuestro trabajo consistió en **analizar el caso, desarrollar una réplica funcional académica, proponer e implementar mejoras y preparar su sustentación al finalizar el semestre**. Es un ejercicio independiente, sin afiliación, representación ni respaldo de la empresa original.
 
-Desde esta carpeta:
+## ¿En qué consistió el proyecto?
 
-```powershell
-if (-not (Test-Path .env)) { Copy-Item .env.example .env }
-docker compose up -d --build
-docker compose ps
-```
+La actividad académica no consistía en fundar una nueva empresa de telemedicina ni en ofrecer atención médica real. El reto era estudiar una plataforma existente y llevar el análisis de sistemas a un prototipo verificable.
 
-También puedes ejecutar el iniciador. Comprueba la configuración y el volumen persistente; requiere que `.env` ya exista:
+El trabajo realizado abarca:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File infrastructure/Start-Vitalsync.ps1
-```
+1. **Análisis:** identificación de actores, requisitos, casos de uso, reglas de negocio y estados de las citas.
+2. **Diseño:** definición de los procesos del paciente, médico y administrador, así como de sus permisos e interacciones.
+3. **Réplica funcional:** implementación independiente de una aplicación fullstack que reproduce los flujos principales del caso de estudio.
+4. **Mejoras propuestas:** ampliación del prototipo con gestión por roles, aprobación de médicos, videollamadas reales mediante LiveKit y espacios de simulación independientes de las citas.
+5. **Verificación y sustentación:** pruebas, evidencia visual, documentación y recorridos demostrables para la evaluación de fin de semestre.
 
-| Servicio | Dirección local predeterminada |
+Las funcionalidades implementadas son parte de **nuestra propuesta académica**; no constituyen una descripción certificada del software de la empresa tomada como referencia.
+
+## Funcionalidades del prototipo
+
+| Módulo | Funcionalidades implementadas |
 | --- | --- |
-| Portal React | http://localhost:5188 |
-| Autenticación compartida | http://localhost:5188/auth |
-| Portal paciente | http://localhost:5188/portal |
-| Portal médico | http://localhost:5188/doctor |
-| Portal administrador | http://localhost:5188/admin |
-| FastAPI / Swagger | http://localhost:8088/docs |
-| OpenAPI JSON | http://localhost:8088/openapi.json |
-| Comprobación de BD | http://localhost:8088/api/health |
-| PostgreSQL | localhost:5488, base `vitalsync`, usuario `vitalsync` |
+| **Paciente** | Registro con correo personal, inicio de sesión, Google (si está configurado), perfil, planes, reservas, pagos simulados, citas e historial |
+| **Médico** | Solicitud de registro, correo institucional de demostración generado automáticamente, aprobación administrativa, cuenta individual, agenda, pacientes asignados e historias clínicas ficticias autorizadas |
+| **Administrador** | Gestión de pacientes, médicos, solicitudes profesionales, disponibilidad, planes, citas, pagos/devoluciones simuladas y auditoría |
+| **Videoconsulta** | Sala privada con LiveKit/WebRTC, cámara y micrófono opcionales, cambio de dispositivos, pantalla compartida, reconexión y finalización persistente por el médico |
+| **Sala de simulación** | Prueba individual o con invitación privada, sin crear una cita, contratar un plan ni efectuar pagos |
+| **Seguridad y datos** | Roles y permisos comprobados en FastAPI, sesiones, transacciones, migraciones Alembic y persistencia PostgreSQL |
 
-Todos los puertos publicados se vinculan exclusivamente a `127.0.0.1`. Se comprobaron libres antes de iniciar. El proyecto Compose se llama `vitalsync` y el volumen persistente `vitalsync_vitalsync_data`. No se usan servicios, datos, credenciales ni puertos de otros proyectos.
+### Acceso único para los tres roles
 
-**Paciente ficticio de demostración:** `paciente@vitalsync.demo`. Su contraseña no se publica ni se comparte como valor predeterminado; en un entorno nuevo el seed genera una clave aleatoria. Para probar el portal, crea una cuenta desde **Crear mi cuenta**. En instalaciones existentes, el seed conserva las credenciales y el perfil que ya tengas.
+La aplicación tiene una pantalla compartida de autenticación. Después de verificar la cuenta, el backend determina su rol y la aplicación dirige al usuario a su portal:
 
-**Cuenta de administrador:** `admin@vitalsync.demo`. En instalaciones existentes, el seed conserva la contraseña que ya estaba configurada. Si no la tienes, solicita un enlace de un solo uso usando el procedimiento privado descrito en [docs/admin-portal.md](docs/admin-portal.md); no se restablecen contraseñas automáticamente. Tras iniciar sesión, el rol abre `/admin`.
+- Paciente → `/portal`.
+- Médico → `/doctor`.
+- Administrador → `/admin`.
 
-## Qué puedes hacer
+El registro público permite crear pacientes y **solicitar** un perfil médico. Una solicitud médica no concede permisos clínicos: necesita aprobación administrativa. El correo médico de demostración sigue la convención `nombre.apellido@doctor.vitalsync.demo`; es un identificador local, **no una dirección de correo real**. Solo los pacientes pueden utilizar el acceso con Google; los médicos y administradores utilizan sus credenciales asignadas.
 
-- Landing, registro público de pacientes y solicitudes médicas pendientes de aprobación, login por correo y contraseña, logout, sesión persistente y rutas protegidas.
-- Dashboard con plan, vencimiento, próxima cita, conteo de próximas y notificaciones reales.
-- Consultar y actualizar nombre y teléfono del perfil; las cuentas históricas pueden añadir una cédula desde Mi perfil.
-- Ver planes Básico, Estándar y Premium; activar, renovar, cambiar cobertura y cancelar el plan activo mediante pago simulado y una acción común para cualquier identificador de plan.
-- Buscar médicos por nombre y especialidad; consultar perfil, jornadas y horarios publicados.
-- Elegir primero teleconsulta virtual simulada (recomendada) o atención presencial; el directorio muestra todas las modalidades de cada médico y filtra profesionales y turnos según la opción elegida.
-- Consultar la cobertura de modalidad y especialidades en cada plan; PostgreSQL y el backend verifican el plan vigente antes de retener y confirmar. Mis citas permite filtrar virtuales, presenciales o todas.
-- Retener un horario durante 10 minutos; el servidor valida médico, agenda, bloqueos, conflictos y cobertura.
-- Pagar copago cuando corresponda, simular rechazo, pendiente o conciliación y resolver el pendiente antes de reintentar.
-- Confirmar transaccionalmente, consultar e imprimir el comprobante desde el navegador.
-- Consultar Mis citas, detalle, historial y canceladas; cancelar con motivo, confirmación expresa y control de versión.
-- Gestionar el ciclo de vida de una teleconsulta simulada: abrir sala, registrar presencias independientes, iniciar/finalizar, reportar ausencias y recuperar incidencias técnicas; no se conecta audio ni video.
-- En la rama de desarrollo v1.1.0, habilitar una videollamada LiveKit autohospedada para citas virtuales existentes; con LiveKit configurado, ofrece preingreso de cámara/micrófono, conexión WebRTC entre paciente y médico asignado y finalización formal. La simulación de v1.0.0 permanece disponible cuando LiveKit está desactivado.
-- Leer notificaciones guardadas en PostgreSQL.
-- Administrar desde `/admin` médicos, pacientes (datos administrativos), citas, disponibilidad, catálogo de planes, pagos simulados, devoluciones simuladas, auditoría, permisos y datos de contacto institucionales.
-- Limitar administradores por módulo en el servidor. El rol administrador no puede leer historias clínicas; esa información requiere al médico tratante autorizado.
+### Videollamadas y simulación
 
-Las retenciones no son citas. Los pagos pendientes no activan planes ni confirman citas. La cancelación de un plan es inmediata porque estos planes no tienen renovación automática: termina la cobertura para nuevas reservas, conserva citas, pagos e historial, y registra titular, plan, transición, fecha y auditoría. Los pagos pendientes o retenciones activas deben resolverse antes. No se genera una devolución automática.
+En `v1.1.0`, las videoconsultas pueden conectar audio y video reales por WebRTC cuando LiveKit está configurado. **Entrar sin cámara o con el micrófono apagado es válido**. Salir de una llamada no equivale a finalizar la consulta: la finalización formal corresponde al médico autorizado y se refleja en los historiales.
 
-Para habilitar la sala local de video, configura claves aleatorias en `.env` y activa el perfil Compose:
+La **Sala de simulación** permite practicar con dispositivos y pantalla compartida, a solas o con un segundo usuario autorizado, sin alterar el calendario ni los pagos. Las salas de prueba no representan actos médicos ni crean historias clínicas.
+
+![Sala de simulación académica de VITALSYNC](docs/screenshots/simulation-desktop.png)
+
+## Tecnologías y arquitectura
+
+| Capa | Tecnologías |
+| --- | --- |
+| Interfaz | React 19, TypeScript, Vite, React Router, Tailwind CSS, TanStack Query |
+| API y negocio | Python 3.13, FastAPI, Pydantic, SQLAlchemy |
+| Datos | PostgreSQL 17, Alembic, restricciones e integridad transaccional |
+| Identidad | Sesiones con cookies HttpOnly, Argon2id, Google Identity Services solo para pacientes |
+| Videollamadas | LiveKit autohospedado y WebRTC |
+| Infraestructura | Docker Compose, nginx y scripts PowerShell |
+| Calidad | pytest, Vitest, Playwright y GitHub Actions |
+
+```text
+Paciente / Médico / Administrador (React)
+                   |
+             API REST /api
+                   |
+           FastAPI + permisos
+             /           \
+     PostgreSQL        LiveKit
+   datos e historial   audio y video
+```
+
+El backend verifica las autorizaciones y las reglas de negocio; React no decide quién puede consultar historias clínicas, emitir tokens de sala o ejecutar acciones administrativas. Los datos clínicos de demostración son sintéticos.
+
+## Ejecutar VITALSYNC localmente
+
+### Requisitos
+
+- Windows 11 con PowerShell (entorno de desarrollo documentado).
+- Docker Desktop en modo contenedores Linux y Docker Compose v2.
+- Git.
+- Internet para descargar las dependencias y, opcionalmente, utilizar el inicio de sesión con Google.
+
+Node.js y Python locales son opcionales si se ejecuta la aplicación únicamente en Docker.
+
+### Preparar el entorno
+
+```powershell
+git clone https://github.com/MiguelArbelaez0/VITALSYNC-FULLSTACK.git
+cd VITALSYNC-FULLSTACK
+Copy-Item .env.example .env
+```
+
+Configura las variables locales antes de arrancar. Para las funcionalidades de video y la entrega privada de credenciales médicas, utiliza los scripts del proyecto:
 
 ```powershell
 .\infrastructure\Configure-LiveKit.ps1
-docker compose --profile video up -d --build
+.\infrastructure\Configure-DoctorCredentials.ps1
+docker compose -p vitalsync --profile video up -d --build --wait
+docker compose -p vitalsync --profile video ps
 ```
 
-La configuración local usa puertos de loopback y no admite llamadas desde Internet u otras redes. La guía de permisos, medios, puertos, pruebas y limitaciones está en [docs/video-consultations-v1.1.md](docs/video-consultations-v1.1.md).
+**Precaución sobre PostgreSQL:** este proyecto utiliza un volumen persistente protegido (`vitalsync_vitalsync_data`). En una instalación nueva puede requerirse inicializarlo o restaurarlo mediante el procedimiento de [Docker unificado](docs/DOCKER_UNIFICADO.md) antes del arranque. **No elimines volúmenes ni ejecutes `docker compose down -v` para resolver errores de inicio.** El código clonado no incluye la base de datos privada de otro equipo.
 
-## Stack y estructura
+### Direcciones locales
 
-Frontend: React 19, Vite 8, TypeScript 6, React Router 7, Tailwind 4, componentes locales shadcn/ui Button y Dialog basados en Radix/CVA, TanStack Query, React Hook Form, Zod y Lucide. `@livekit/components-react`, sus estilos y `livekit-client` se cargan bajo demanda en la sala. `package-lock.json` fija las versiones resueltas.
+| Servicio | URL |
+| --- | --- |
+| Inicio y login compartido | http://localhost:5188/login |
+| Registro compartido | http://localhost:5188/auth |
+| Portal paciente | http://localhost:5188/portal |
+| Portal médico | http://localhost:5188/doctor |
+| Portal administrador | http://localhost:5188/admin |
+| API / Swagger | http://localhost:8088/docs |
+| Estado de la API | http://localhost:8088/api/health |
 
-Backend: Python 3.13 en Docker, FastAPI, Pydantic 2, SQLAlchemy 2, Alembic, psycopg, SDK oficial `livekit-api` y Argon2id con pwdlib. `requirements.txt` expresa compatibilidad y `requirements.lock` fija el entorno Linux probado en Docker. PostgreSQL 17 con `btree_gist`, claves foráneas, checks, índices y exclusiones de solapamiento.
+**Credenciales:** el README no distribuye contraseñas. Los perfiles demo utilizan credenciales individuales que se preparan o entregan mediante procedimientos locales privados. Un visitante puede crear un paciente ficticio desde el registro. Para las cuentas médicas es necesaria la aprobación administrativa.
 
-```text
-frontend/src/
-  app/                    rutas, landing y estructura responsive
-  features/               auth, dashboard, doctors, plans, appointments, notifications
-  features/admin/         panel responsive por módulos administrativos
-  components/ui/          componentes shadcn/ui
-  hooks/                  estado de sesión
-  services/               cliente REST y formatos de Bogotá/COP
-  types/                  contratos TypeScript
-  styles/                 diseño y responsive
-backend/
-  app/main.py             API, permisos, validación de origen y errores
-  app/core/               configuración y seguridad
-  app/models/             entidades SQLAlchemy
-  app/schemas/            solicitudes Pydantic
-  app/services/           reglas de reserva, cancelación, pagos y administración
-  app/repositories/       consultas y proyecciones
-  app/db/                 unidad de trabajo transaccional
-  alembic/versions/        migraciones versionadas
-  tests/                  pruebas con PostgreSQL aislado
-infrastructure/           inicio Windows, pruebas y verificación de persistencia
-docs/                     guía, arquitectura, validación y capturas reales
-```
+**Google:** para utilizar el botón oficial configura `GOOGLE_CLIENT_ID` y `VITE_GOOGLE_CLIENT_ID` con el Client ID de tu propio proyecto de Google Cloud. Consulta [Google Identity Services](docs/google-auth-v1.1.md).
 
-React se comunica por `/api` con nginx (o el proxy Vite). FastAPI concentra permisos y negocio. La base es la única fuente de datos; no hay médicos, citas o métricas simulados en arreglos del frontend. Los perfiles del seed sí son ficticios, guardados en PostgreSQL.
+**Redes externas:** el despliegue local de LiveKit está preparado para `localhost`. La conexión entre redes requiere infraestructura y configuración adicionales, incluidos HTTPS/WSS e ICE/TURN; no debe asumirse disponible por ejecutar Compose.
 
-## Registro, documento y privacidad
+## Pruebas y evidencia
 
-En **Crear mi cuenta**, cada paciente registra nombres, apellidos, cédula de ciudadanía (CC), correo, teléfono y contraseña. Debe aceptar sin premarcar el aviso de privacidad para continuar. El backend asigna el rol `PATIENT`; la API no admite seleccionar roles. Después del alta se inicia sesión con cookie HttpOnly y cada cuenta tiene su propio perfil, plan, reservas, pagos y notificaciones.
-
-La cédula se conserva como texto para mantener ceros iniciales. La validación de demostración exige entre 6 y 10 dígitos, sin puntos ni espacios. Es una regla de formato: VITALSYNC no comprueba identidad ni consulta a la Registraduría. PostgreSQL garantiza que no se repita un documento CC. Los errores de documento/correo duplicado son genéricos para no ofrecer una búsqueda pública de personas.
-
-Los números completos de documento no se devuelven desde el perfil: solo se muestra el tipo y los últimos cuatro dígitos. Los usuarios existentes conservan su cuenta sin documento y pueden completarlo desde **Mi perfil** después de aceptar el aviso. Los campos documentales y el consentimiento de usuarios históricos permanecen nullable; no se crean identidades ficticias ni se cambia una contraseña durante la migración. No introduzcas cédulas reales en la demostración.
-
-El aviso registra la versión `VITALSYNC-PRIVACIDAD-2026-11-v1` y la fecha de aceptación. Informa que nombre, cédula, correo y teléfono se utilizan para crear y proteger la cuenta, gestionar el plan y coordinar la atención solicitada. Es una explicación funcional para esta demostración y no una certificación legal.
-
-## Concurrencia, transacciones y seguridad
-
-Las operaciones críticas bloquean primero la fila del paciente y después la del médico con `SELECT FOR UPDATE`. La segunda transacción espera y vuelve a consultar conflictos antes de escribir. Se comprueban solapamientos, incluyendo horarios parcialmente superpuestos y citas del propio paciente con otro médico. La base además tiene exclusiones GiST para intervalos confirmados de médico y paciente y unicidad por retención.
-
-Los pagos se serializan por paciente y tienen una clave idempotente única. La repetición de una clave devuelve la operación existente; una pendiente bloquea otra para el mismo destino. La conciliación aplica la activación una sola vez. Un copago tardío no puede aprobar una retención vencida. Los cambios, auditoría, notificación e historial se confirman juntos. FastAPI termina la transacción **antes** de enviar una respuesta exitosa; también se prueba el fallo al hacer commit.
-
-Sesiones opacas aleatorias en cookie `HttpOnly`, `SameSite=Strict`; en la BD solo se guarda el hash SHA-256 del token. Las contraseñas usan Argon2id. No se guardan tokens en localStorage ni sessionStorage. Se rechazan orígenes no autorizados y solicitudes de navegador marcadas `cross-site`. Los roles públicos no son seleccionables. Los errores internos de SQL no se exponen al usuario.
-
-`COOKIE_SECURE=false` permite HTTP de localhost en esta demostración. Un eventual despliegue deberá habilitar HTTPS, cookie segura, gestión de secretos, limitación de intentos de login, monitorización y un proveedor de pagos real. Esta entrega se limita al entorno local.
-
-## Variables de entorno
-
-| Variable | Predeterminado | Efecto |
-| --- | --- | --- |
-| `VITALSYNC_FRONTEND_PORT` | `5188` | Puerto HTTP del portal |
-| `VITALSYNC_BACKEND_PORT` | `8088` | Puerto HTTP de API y documentación |
-| `VITALSYNC_POSTGRES_PORT` | `5488` | Puerto local de PostgreSQL |
-| `POSTGRES_DB` / `POSTGRES_USER` | `vitalsync` | Base y usuario propios |
-| `POSTGRES_PASSWORD` | valor ficticio en `.env.example` | Contraseña local de demostración |
-| `DEMO_MODE` | `true` en Compose | Seed y controles de pago simulado; fuera de Compose el backend predetermina `false` |
-| `HOLD_MINUTES` | `10` | Duración de retención |
-| `CANCELLATION_HOURS` | `2` | Se exige cancelar con **más** de 2 horas de anticipación |
-| `TELECONSULT_ROOM_OPEN_MINUTES` | `5` | Minutos antes de la cita para habilitar la sala virtual |
-| `TELECONSULT_WAIT_GRACE_MINUTES` | `15` | Plazo de espera usado para registrar ausencias en demostración |
-| `SESSION_HOURS` | `12` | Vigencia de sesión |
-| `COOKIE_SECURE` | `false` | Cookie HTTPS cuando es `true` |
-
-Compose deriva `DATABASE_URL` y `ALLOWED_ORIGINS` de las variables anteriores. Si los puertos están ocupados, edita `.env` y vuelve a ejecutar Compose; no detengas otros proyectos. Mantén `localhost` como host durante todo el recorrido. No cambies usuario/contraseña de PostgreSQL sobre un volumen ya inicializado sin migrar sus credenciales.
-
-## Migraciones y seed
-
-El backend ejecuta `alembic upgrade head` al arrancar y luego `python -m app.seed` si `DEMO_MODE=true`. Migraciones:
-
-1. `1dd6f0a05515`: entidades, FKs, estados, checks, unicidades e índices.
-2. `20261108_overlap`: extensión `btree_gist` y restricciones de solapamiento.
-3. `20261109_virtual`: modalidades virtual/presencial con registros antiguos conservados como presenciales y cobertura de planes actualizada.
-4. `20261110_virtual_history`: amplía el historial para guardar transiciones de la sala virtual simulada.
-5. `20261114_patient_identity`: añade estado y fecha de creación de cuentas, aceptación versionada del aviso y documento nullable con formato y unicidad para CC. Las cuentas anteriores conservan sus valores nulos.
-6. `20261115_teleconsult_lifecycle`: agrega presencias y marcas de tiempo; reconcilia la cita con su teleconsulta ligada por `appointment_id`; conserva el historial y amplía estados cancelables/bloqueos de agenda.
-7. `20261120_admin_portal`: crea sidecars de permisos, auditoría, recuperación de acceso, devoluciones, revisiones de catálogo y capturas económicas. Las condiciones heredadas se etiquetan como observadas durante la migración; no modifica citas, pagos ni planes existentes.
-
-Se crean 5 especialidades, 5 médicos, 3 planes, un paciente sin plan y el administrador. Se publican los siguientes 21 días, con 6 turnos diarios por médico, y se registra un bloqueo de demostración a las 11:00 del día siguiente. Todos los turnos duran 30 minutos y tienen autoría administrativa. Las fechas se calculan en `America/Bogota`, se persisten y no se generan aleatoriamente en las consultas. Reiniciar no duplica turnos ni sobrescribe datos existentes.
+La validación local documentada de `v1.1.0` informa **200 pruebas backend** y **66 frontend** aprobadas, junto con recorridos E2E de registro, aprobación médica, reservas, LiveKit, reconexión, finalización y sala de simulación. Los E2E audiovisuales de esta revisión utilizan medios sintéticos. El acceso real de Google, la calidad audible y las llamadas entre redes diferentes **requieren verificaciones manuales adicionales**.
 
 ```powershell
-docker compose exec backend alembic current
-docker compose exec backend python -m app.seed
+.\infrastructure\Test-Backend.ps1
+npm --prefix frontend ci
+npm --prefix frontend test
+npm --prefix frontend run build
+.\infrastructure\test-livekit.ps1
 ```
 
-## Pruebas
+Las pruebas que modifican datos utilizan bases aisladas de PostgreSQL. Consulta los resultados y límites concretos en [docs/VALIDACION.md](docs/VALIDACION.md). Los trabajos de integración continua se pueden consultar en [GitHub Actions](https://github.com/MiguelArbelaez0/VITALSYNC-FULLSTACK/actions).
 
-Backend real en una base temporal con prefijo `vitalsync_test_audit_`, dentro de PostgreSQL. El runner crea una base nueva por ejecución y la suite solo admite nombres de prueba autorizados antes de truncar sus propias tablas:
+## Documentación para la sustentación
 
-```powershell
-powershell -ExecutionPolicy Bypass -File infrastructure/Test-Backend.ps1
-```
+- [Arquitectura y reglas de negocio](docs/ARQUITECTURA.md)
+- [Guía de demostración del paciente](docs/GUIA_DEMOSTRACION_PACIENTE.md)
+- [Registro unificado y aprobación médica](docs/auth-registration-v1.1.md)
+- [Google para pacientes](docs/google-auth-v1.1.md)
+- [Portal médico](docs/doctor-portal.md)
+- [Portal administrativo](docs/admin-portal.md)
+- [Videollamadas LiveKit y salas de simulación](docs/video-consultations-v1.1.md)
+- [Docker, respaldo y recuperación](docs/DOCKER_UNIFICADO.md)
+- [Validaciones y evidencia de pruebas](docs/VALIDACION.md)
 
-El script toma la configuración efectiva y usa el servicio `db`. No modifica ni trunca la base acumulada `vitalsync_test`, la base principal `vitalsync` ni otros datos preexistentes. Conserva la base de auditoría recién creada para que sus resultados puedan inspeccionarse.
+### Capturas de la implementación académica
 
-Frontend:
+| Interfaz | Evidencia |
+| --- | --- |
+| Paciente | [Dashboard](docs/screenshots/dashboard-desktop.png) |
+| Médico | [Portal médico](docs/screenshots/doctor-dashboard-desktop.png) |
+| Administrador | [Dashboard administrativo](docs/screenshots/admin-dashboard-desktop.png) |
+| Videollamada | [Sala LiveKit](docs/screenshots/livekit-room-desktop.png) |
+| Simulación | [Sala de prueba](docs/screenshots/simulation-desktop.png) |
+| Pantalla compartida | [Demostración](docs/screenshots/simulation-shared-screen.png) |
 
-```powershell
-cd frontend
-npm ci
-npm test
-npm run build
-cd ..
-```
+## Evolución del trabajo
 
-El E2E que crea cuentas y reservas usa una base temporal nueva `vitalsync_test_audit_*`, con dos servicios dentro del proyecto `vitalsync`. El script selecciona `infrastructure/compose.test.yml` y retira solo esos servicios; conserva el servidor PostgreSQL, sus volúmenes y todas las bases preexistentes:
+| Versión | Entrega |
+| --- | --- |
+| [v1.0.0](https://github.com/MiguelArbelaez0/VITALSYNC-FULLSTACK/releases/tag/v1.0.0) | Réplica académica inicial con los tres portales, gestión de citas, pagos simulados y teleconsulta por estados |
+| [v1.1.0](https://github.com/MiguelArbelaez0/VITALSYNC-FULLSTACK/releases/tag/v1.1.0) | Inicio y registro unificados, Google para pacientes, solicitudes médicas, LiveKit y salas de simulación |
 
-```powershell
-powershell -ExecutionPolicy Bypass -File infrastructure/test-doctor-portal.ps1
-```
+La documentación y el repositorio muestran **el desarrollo realizado por el equipo universitario**, no un lanzamiento, actualización o producto de la empresa de referencia.
 
-El script comprueba la contraseña de la cuenta médica de pruebas y no la sobrescribe. Si el volumen de pruebas es nuevo, la contraseña de demostración aislada debe configurarse explícitamente antes del primer E2E. Más información en [doctor-portal.md](docs/doctor-portal.md).
+## Alcance y aviso de uso
 
-Para verificar paciente y médico y la persistencia de la base principal sin crear cuentas, citas o pagos, usa cuentas existentes. El programa solicita sus contraseñas de forma oculta; también admite `VITALSYNC_PATIENT_EMAIL`, `VITALSYNC_PATIENT_PASSWORD`, `VITALSYNC_DOCTOR_EMAIL` y `VITALSYNC_DOCTOR_PASSWORD` como variables del proceso:
+Este proyecto se desarrolló **exclusivamente para aprendizaje, evaluación y sustentación universitaria**. La marca y el nombre de la plataforma de referencia pertenecen a sus respectivos titulares; este repositorio no implica afiliación ni autorización de la empresa original.
 
-```powershell
-python infrastructure/verify_persistence.py --restart --output docs/docker-unification-validation.json
-```
+- **No es un servicio de telemedicina operativo**, ni está diseñado para atender pacientes reales.
+- Los pacientes y las historias clínicas de la demostración deben ser **ficticios**.
+- Los pagos, copagos y devoluciones son **simulados**; no se transfieren fondos.
+- El uso local de LiveKit puede transmitir audio y video en tiempo real, pero **la aplicación no los graba ni genera transcripciones**.
+- Las pruebas automatizadas y el funcionamiento local **no equivalen a una certificación de seguridad, cumplimiento legal o aptitud clínica**.
+- No se deben introducir documentos, historiales médicos ni credenciales reales en una instalación académica compartida.
 
-Esta comprobación solicita de forma oculta las contraseñas existentes de paciente, médico y administrador; también admite las variables `VITALSYNC_PATIENT_PASSWORD`, `VITALSYNC_DOCTOR_PASSWORD` y `VITALSYNC_ADMIN_PASSWORD` en el proceso. Verifica los tres roles, deniega acceso cruzado y comprueba que sus sesiones y los datos persisten tras reiniciar; no cambia contraseñas ni cancela reservas. No la ejecutes simultáneamente con otros usuarios o pruebas que estén modificando reservas.
-
-Resultados y alcance comprobados: [VALIDACION.md](docs/VALIDACION.md).
-
-## Desarrollo fuera de contenedores
-
-Puedes mantener PostgreSQL en Docker y usar Vite y FastAPI locales. Para Python utiliza una versión soportada por las dependencias (3.12 o 3.13), no el Python 3.15 predeterminado de esta máquina:
-
-```powershell
-docker compose -p vitalsync up -d db
-cd backend
-py -3.13 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-$env:DATABASE_URL='postgresql+psycopg://vitalsync:local_demo_change_me@localhost:5488/vitalsync'
-$env:DEMO_MODE='true'
-alembic upgrade head
-python -m app.seed
-uvicorn app.main:app --host 127.0.0.1 --port 8088 --reload
-```
-
-En otra terminal: `cd frontend`, `npm ci`, `npm run dev`. Detén primero los contenedores backend/frontend si usan esos mismos puertos. Vite redirige `/api` al puerto 8088; si lo cambias, ajusta `frontend/vite.config.ts`.
-
-## Reinicios y diagnóstico
-
-```powershell
-docker compose logs --tail 80 backend
-docker compose logs --tail 80 frontend
-docker compose -p vitalsync restart
-docker compose -p vitalsync stop
-docker compose -p vitalsync up -d --wait
-```
-
-Para el arranque habitual usa `infrastructure/Start-Vitalsync.ps1`: fija el proyecto `vitalsync`, comprueba el volumen principal y espera a que los servicios estén saludables. El volumen externo existente es `vitalsync_vitalsync_data`; Compose se detiene si falta para evitar reemplazar los datos por una base vacía. No elimines volúmenes para actualizar imágenes. Consulta el [informe de unificación y mantenimiento](docs/DOCKER_UNIFICADO.md) para respaldo y recuperación.
-
-No hay recuperación por correo. El administrador solicita una recuperación en Configuración; un operador local emite un enlace de un solo uso en un archivo protegido de Windows. La persona titular elige su contraseña en `/recover`; la contraseña existente se conserva hasta que la persona redima el enlace. Consulta [Portal administrativo](docs/admin-portal.md).
-
-## Documentación y capturas
-
-- [Guía exacta para presentar el portal](docs/GUIA_DEMOSTRACION_PACIENTE.md)
-- [Arquitectura, estados y API](docs/ARQUITECTURA.md)
-- [Portal administrativo: módulos, permisos, privacidad y recuperación](docs/admin-portal.md)
-- [Captura del dashboard administrativo](docs/screenshots/admin-dashboard-desktop.png)
-- [Validación ejecutada y límites](docs/VALIDACION.md)
-
-![Dashboard real](docs/screenshots/dashboard-desktop.png)
-
-## Límites de la demostración
-
-La administración y las devoluciones operan con registros simulados: no realizan transferencias ni procesan pagos reales. Con LiveKit desactivado, la teleconsulta conserva el ciclo de demostración v1.0.0 sin usar audio o video. En esta rama v1.1.0, al activar el perfil `video`, las citas virtuales usan una sala WebRTC privada. La prueba de dos navegadores pasó con medios sintéticos y con cámara/micrófono físicos de este equipo; en ambos casos verificó video y pistas de audio activas en las dos direcciones, reconexión y finalización. No se midió la calidad audible, ni se validaron llamadas entre redes distintas. No se incluye correo, notificación push, app nativa ni despliegue público.
-
-El comprobante se imprime con el navegador (puedes elegir Guardar como PDF); no hay un generador de PDF en el servidor. Las notificaciones y pagos listan las últimas 100 operaciones. Las retenciones vencidas dejan de bloquear por su fecha, sin requerir un proceso programado. El seed amplía la agenda al reiniciar; no sustituye un módulo administrativo.
-
-No se realizó push ni publicación en GitHub.
-
-
-## Portal del médico
-
-La implementación médica comparte la aplicación y las sesiones existentes. Para iniciar la versión revisada:
-
-```powershell
-docker compose -p vitalsync up -d --build --wait
-```
-
-El login compartido dirige al paciente a `/portal`, al médico a `/doctor` y al administrador a `/admin`. El registro permite elegir Paciente o Médico: el paciente crea su cuenta; el médico presenta una solicitud pendiente, con correo institucional generado, que exige aprobación administrativa y entrega privada de una contraseña individual. Google queda disponible únicamente para pacientes. Las cuentas y contraseñas existentes se conservan; el médico no cambia su contraseña desde el portal y solicita restablecimiento a administración.
-
-Consulta el [registro unificado, aprobación médica y entrega segura de credenciales](docs/auth-registration-v1.1.md). Antes de usar aprobaciones nuevas, ejecutar `.\infrastructure\Configure-DoctorCredentials.ps1` y reconstruir el backend.
-
-Consulta [arquitectura, rutas, migración, pruebas y acceso local del portal médico](docs/doctor-portal.md).
-
-
-## Docker unificado
-
-VITALSYNC v1.1.0 incluye una **Sala de simulación** de LiveKit para cuentas académicas autorizadas. Permite probar cámara, micrófono y pantalla compartida a solas o mediante una invitación privada, sin generar una cita ni un pago. El inicio y los controles son comunes a la videoconsulta. Consulta [videollamadas, configuración local y alcance académico](docs/video-consultations-v1.1.md).
-
-El único despliegue permanente es `vitalsync`, con `frontend`, `backend` y `db`. Los tres portales comparten la API, el login y la base principal existente. El volumen principal es externo y queda fijado por nombre; no se genera una base vacía si desaparece.
-
-```powershell
-powershell -ExecutionPolicy Bypass -File infrastructure/Start-Vitalsync.ps1
-powershell -ExecutionPolicy Bypass -File infrastructure/Backup-Vitalsync.ps1
-docker compose -p vitalsync ps
-```
-
-Los respaldos quedan fuera del repositorio, en `Escritorio\VITALSYNC-RESPALDOS`, con comprobación de lectura del archivo y SHA256. El arranque requiere el volumen principal existente o restaurado; un equipo nuevo debe recuperar un respaldo revisado antes de iniciar esta configuración protegida.
-
-Consulta [infraestructura, respaldo, volúmenes y resultados de la unificación](docs/DOCKER_UNIFICADO.md).
+**Propósito de la entrega:** demostrar cómo un caso de estudio universitario puede traducirse en análisis, diseño, implementación, validación y mejoras funcionales verificables al cierre del semestre.
